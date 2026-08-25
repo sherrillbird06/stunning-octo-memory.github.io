@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>CONTROL QUEST — Compliance Version</title>
+<style>
+  :root{
+    --dmg0:#0f380f; --dmg1:#306230; --dmg2:#8bac0f; --dmg3:#9bbc0f;
+    --shell:#20232a; --shell-hi:#2c3039; --shell-lo:#14161b;
+    --bezel:#0b0d10; --nameplate:#6c7480;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(circle at 50% 22%, #262a33 0%, #15171c 55%, #0c0d10 100%);
+    display:flex; align-items:center; justify-content:center;
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    color:#8b93a1; padding:16px; overflow:hidden;
+  }
+  #console{
+    background:linear-gradient(160deg,var(--shell-hi),var(--shell) 45%,var(--shell-lo));
+    border-radius:14px 14px 40px 14px;
+    padding:18px 18px 10px;
+    box-shadow:0 24px 60px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.06);
+    max-width:100%;
+  }
+  #bezel{
+    background:var(--bezel); border-radius:10px 10px 22px 10px;
+    padding:14px 20px 10px; position:relative;
+  }
+  #bezel::before{
+    content:"CONTROL QUEST"; position:absolute; top:4px; left:20px;
+    font-size:7px; letter-spacing:.28em; color:#4a515c;
+  }
+  #bezel::after{
+    content:"DOT MATRIX WITH AUDIT TRAIL"; position:absolute; bottom:2px; right:20px;
+    font-size:6px; letter-spacing:.2em; color:#3a4049;
+  }
+  canvas{
+    display:block; image-rendering:pixelated; background:var(--dmg3);
+    border-radius:2px;
+  }
+  #power{
+    position:absolute; left:8px; top:50%; width:5px; height:5px; border-radius:50%;
+    background:#c33; box-shadow:0 0 6px #c33; transform:translateY(-50%);
+  }
+  #hint{
+    text-align:center; font-size:8px; letter-spacing:.14em;
+    color:#565d69; margin-top:9px; line-height:1.7;
+  }
+  #hint b{color:#7d8593;font-weight:400}
+  @media (max-width:480px){ #console{padding:10px 10px 6px} #bezel{padding:12px 12px 8px} }
+</style>
+</head>
+<body>
+<div id="console">
+  <div id="bezel"><div id="power"></div><canvas id="screen" width="160" height="144"></canvas></div>
+  <div id="hint"><b>ARROWS/WASD</b> move &nbsp;·&nbsp; <b>Z</b> confirm &nbsp;·&nbsp; <b>X</b> back &nbsp;·&nbsp; <b>ENTER</b> menu</div>
+</div>
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════
+   CONTROL QUEST — a GRC training RPG in the shape of a 1996 handheld.
+   Original characters and world. Style homage only.
+   ══════════════════════════════════════════════════════════════════ */
+
+const W=160,H=144,TS=16;
+const cvs=document.getElementById("screen"), ctx=cvs.getContext("2d");
+ctx.imageSmoothingEnabled=false;
+const PAL=["#0f380f","#306230","#8bac0f","#9bbc0f"]; // 0 darkest .. 3 lightest
+const img=ctx.createImageData(W,H);
+const buf=new Uint8Array(W*H); // palette indices
+
+function clear(c){ buf.fill(c); }
+function px(x,y,c){ x|=0; y|=0; if(x<0||y<0||x>=W||y>=H)return; buf[y*W+x]=c; }
+function rect(x,y,w,h,c){ for(let j=0;j<h;j++)for(let i=0;i<w;i++)px(x+i,y+j,c); }
+function frame(x,y,w,h,c){ rect(x,y,w,1,c);rect(x,y+h-1,w,1,c);rect(x,y,1,h,c);rect(x+w-1,y,1,h,c); }
+function flush(){
+  const d=img.data;
+  for(let i=0;i<buf.length;i++){
+    const hex=PAL[buf[i]];
+    d[i*4]=parseInt(hex.substr(1,2),16);
+    d[i*4+1]=parseInt(hex.substr(3,2),16);
+    d[i*4+2]=parseInt(hex.substr(5,2),16);
+    d[i*4+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+}
+
+/* ── Bitmap font: 5x7 glyphs in an 8x8 cell ─────────────────────── */
+const F={};
+function G(ch,rows){ F[ch]=rows; }
+G(" ",["     ","     ","     ","     ","     ","     ","     "]);
+G("A",[" ### ","#   #","#   #","#####","#   #","#   #","#   #"]);
+G("B",["#### ","#   #","#### ","#   #","#   #","#   #","#### "]);
+G("C",[" ### ","#   #","#    ","#    ","#    ","#   #"," ### "]);
+G("D",["#### ","#   #","#   #","#   #","#   #","#   #","#### "]);
+G("E",["#####","#    ","#### ","#    ","#    ","#    ","#####"]);
+G("F",["#####","#    ","#### ","#    ","#    ","#    ","#    "]);
+G("G",[" ### ","#   #","#    ","#  ##","#   #","#   #"," ### "]);
+G("H",["#   #","#   #","#####","#   #","#   #","#   #","#   #"]);
+G("I",[" ### ","  #  ","  #  ","  #  ","  #  ","  #  "," ### "]);
+G("J",["    #","    #","    #","    #","#   #","#   #"," ### "]);
+G("K",["#   #","#  # ","# #  ","##   ","# #  ","#  # ","#   #"]);
+G("L",["#    ","#    ","#    ","#    ","#    ","#    ","#####"]);
+G("M",["#   #","## ##","# # #","#   #","#   #","#   #","#   #"]);
+G("N",["#   #","##  #","# # #","#  ##","#   #","#   #","#   #"]);
+G("O",[" ### ","#   #","#   #","#   #","#   #","#   #"," ### "]);
+G("P",["#### ","#   #","#   #","#### ","#    ","#    ","#    "]);
+G("Q",[" ### ","#   #","#   #","#   #","# # #","#  # "," ## #"]);
+G("R",["#### ","#   #","#   #","#### ","# #  ","#  # ","#   #"]);
+G("S",[" ####","#    ","#    "," ### ","    #","    #","#### "]);
+G("T",["#####","  #  ","  #  ","  #  ","  #  ","  #  ","  #  "]);
+G("U",["#   #","#   #","#   #","#   #","#   #","#   #"," ### "]);
+G("V",["#   #","#   #","#   #","#   #","#   #"," # # ","  #  "]);
+G("W",["#   #","#   #","#   #","# # #","# # #","## ##","#   #"]);
+G("X",["#   #","#   #"," # # ","  #  "," # # ","#   #","#   #"]);
+G("Y",["#   #","#   #"," # # ","  #  ","  #  ","  #  ","  #  "]);
+G("Z",["#####","    #","   # ","  #  "," #   ","#    ","#####"]);
+G("a",["     ","     "," ### ","    #"," ####","#   #"," ####"]);
+G("b",["#    ","#    ","#### ","#   #","#   #","#   #","#### "]);
+G("c",["     ","     "," ####","#    ","#    ","#    "," ####"]);
+G("d",["    #","    #"," ####","#   #","#   #","#   #"," ####"]);
+G("e",["     ","     "," ### ","#   #","#####","#    "," ####"]);
+G("f",["  ## "," #   "," #   ","#### "," #   "," #   "," #   "]);
+G("g",["     "," ####","#   #","#   #"," ####","    #"," ### "]);
+G("h",["#    ","#    ","#### ","#   #","#   #","#   #","#   #"]);
+G("i",["  #  ","     "," ##  ","  #  ","  #  ","  #  "," ### "]);
+G("j",["   # ","     ","  ## ","   # ","   # ","#  # "," ##  "]);
+G("k",["#    ","#    ","#  # ","# #  ","##   ","# #  ","#  # "]);
+G("l",[" ##  ","  #  ","  #  ","  #  ","  #  ","  #  "," ### "]);
+G("m",["     ","     ","## # ","# # #","# # #","# # #","# # #"]);
+G("n",["     ","     ","#### ","#   #","#   #","#   #","#   #"]);
+G("o",["     ","     "," ### ","#   #","#   #","#   #"," ### "]);
+G("p",["     ","#### ","#   #","#   #","#### ","#    ","#    "]);
+G("q",["     "," ####","#   #","#   #"," ####","    #","    #"]);
+G("r",["     ","     ","# ###","##   ","#    ","#    ","#    "]);
+G("s",["     ","     "," ####","#    "," ### ","    #","#### "]);
+G("t",[" #   "," #   ","#### "," #   "," #   "," #  #","  ## "]);
+G("u",["     ","     ","#   #","#   #","#   #","#  ##"," ## #"]);
+G("v",["     ","     ","#   #","#   #","#   #"," # # ","  #  "]);
+G("w",["     ","     ","#   #","# # #","# # #","# # #"," # # "]);
+G("x",["     ","     ","#   #"," # # ","  #  "," # # ","#   #"]);
+G("y",["     ","#   #","#   #","#   #"," ####","    #"," ### "]);
+G("z",["     ","     ","#####","   # ","  #  "," #   ","#####"]);
+G("0",[" ### ","#   #","#  ##","# # #","##  #","#   #"," ### "]);
+G("1",["  #  "," ##  ","  #  ","  #  ","  #  ","  #  "," ### "]);
+G("2",[" ### ","#   #","    #","   # ","  #  "," #   ","#####"]);
+G("3",["#####","   # ","  ## ","    #","    #","#   #"," ### "]);
+G("4",["   # ","  ## "," # # ","#  # ","#####","   # ","   # "]);
+G("5",["#####","#    ","#### ","    #","    #","#   #"," ### "]);
+G("6",["  ## "," #   ","#    ","#### ","#   #","#   #"," ### "]);
+G("7",["#####","    #","   # ","  #  "," #   "," #   "," #   "]);
+G("8",[" ### ","#   #","#   #"," ### ","#   #","#   #"," ### "]);
+G("9",[" ### ","#   #","#   #"," ####","    #","   # "," ##  "]);
+G(".",["     ","     ","     ","     ","     "," ##  "," ##  "]);
+G(",",["     ","     ","     ","     "," ##  "," ##  ","  #  "]);
+G("!",["  #  ","  #  ","  #  ","  #  ","  #  ","     ","  #  "]);
+G("?",[" ### ","#   #","    #","   # ","  #  ","     ","  #  "]);
+G("'",["  #  ","  #  ","     ","     ","     ","     ","     "]);
+G("-",["     ","     ","     ","#####","     ","     ","     "]);
+G(";",["     ","  #  ","  #  ","     ","  #  ","  #  "," #   "]);
+G(":",["     ","  #  ","  #  ","     ","  #  ","  #  ","     "]);
+G("/",["    #","    #","   # ","  #  "," #   ","#    ","#    "]);
+G("(",["   # ","  #  "," #   "," #   "," #   ","  #  ","   # "]);
+G(")",[" #   ","  #  ","   # ","   # ","   # ","  #  "," #   "]);
+G("%",["#   #","#  # ","  #  "," #   ","#   #","    #","    #"]);
+G(">",[" #   ","  #  ","   # ","    #","   # ","  #  "," #   "]);
+G("*",["     "," # # ","  #  ","#####","  #  "," # # ","     "]);
+G("+",["     ","  #  ","  #  ","#####","  #  ","  #  ","     "]);
+G("=",["     ","     ","#####","     ","#####","     ","     "]);
+G("#",[" # # ","#####"," # # ","#####"," # # ","     ","     "]);
+G("_",["     ","     ","     ","     ","     ","     ","#####"]);
+G("[",["  ###","  #  ","  #  ","  #  ","  #  ","  #  ","  ###"]);
+G("]",["###  ","  #  ","  #  ","  #  ","  #  ","  #  ","###  "]);
+G("\u2665",["     "," # # ","#####","#####"," ### ","  #  ","     "]);
+
+function chw(ch){ return 6; }
+function text(s,x,y,c){
+  c=(c===undefined)?0:c;
+  let cx=x;
+  for(const ch of String(s)){
+    const g=F[ch]||F["?"];
+    for(let j=0;j<7;j++) for(let i=0;i<5;i++) if(g[j][i]==="#") px(cx+i,y+j,c);
+    cx+=6;
+  }
+  return cx;
+}
+function textw(s){ return String(s).length*6; }
+function wrap(s,maxCh){
+  const out=[];
+  for(const para of String(s).split("\n")){
+    let ln="";
+    for(const w of para.split(" ")){
+      if(ln && (ln+" "+w).length>maxCh){ out.push(ln); ln=w; }
+      else ln = ln?ln+" "+w:w;
+    }
+    out.push(ln);
+  }
+  return out;
+}
+function ctext(s,y,c,x0,w0){
+  x0=x0===undefined?0:x0; w0=w0===undefined?W:w0;
+  text(s, x0+Math.floor((w0-textw(s))/2), y, c);
+}
+
+/* ── Art: 16x16 tiles. ' '=3 light, '.'=2, ':'=1, '#'=0 dark, 't'=clear ── */
+const CMAP={" ":3,".":2,":":1,"#":0,"t":-1};
+function art(rows){ return rows.map(r=>[...r].map(c=>CMAP[c])); }
+
+const TILE={};
+TILE.floor=art([
+"                ","  .             ","                ","                ",
+"          .     ","                ","                ","    .           ",
+"                ","                ","                ","               .",
+"                ","      .         ","                ","                "]);
+TILE.carpet=art([
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  ..",
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  ..",
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  ..",
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  .."]);
+TILE.wall=art([
+"::::::::::::::::",": ...  :  ... . ",": .... :  .. .. ","::::::::::::::::",
+"  ..  :  ...  : ","  ... :  .... : ","::::::::::::::::",": ...  :  ..  . ",
+": .. . :  ... . ","::::::::::::::::","  ..  :  ..   : ","  . . :  .... : ",
+"::::::::::::::::",": ..  :  ..  ..#",":::::::::::::: :","################"]);
+TILE.desk=art([
+"tttttttttttttttt","tttttttttttttttt","################","#              #",
+"#  ##########  #","#  #        #  #","#  #  ....  #  #","#  #  ....  #  #",
+"#  ##########  #","#              #","################","#..##########..#",
+"#..#tttttttt#..#","#..#tttttttt#..#","####tttttttt####","tttttttttttttttt"]);
+TILE.rack=art([
+"################","#::::::::::::::#","#: ##  ##  ## :#","#:            :#",
+"#: ##  ##  ## :#","#:            :#","#: ##  ##  ## :#","#:            :#",
+"#: ##  ##  ## :#","#:            :#","#: ##  ##  ## :#","#:            :#",
+"#::::::::::::::#","################","#  ##########  #","tttttttttttttttt"]);
+TILE.door=art([
+"################","#..............#","#.############.#","#.#          #.#",
+"#.#          #.#","#.#   ....   #.#","#.#   ....   #.#","#.#          #.#",
+"#.#        # #.#","#.#        # #.#","#.#          #.#","#.############.#",
+"#..............#","#..............#","#..............#","################"]);
+TILE.plant=art([
+"tttttt ##  ttttt","tttt ##  ##  ttt","tt ##  ##  ##  t","t  ##  ##  ##  t",
+"tt   ##  ##   tt","tttt  ####  tttt","tttttt ##  ttttt","tttttt ##  ttttt",
+"ttttt ####  tttt","tttt#......#tttt","tttt#......#tttt","tttt#......#tttt",
+"ttttt#....#ttttt","ttttt#....#ttttt","ttttt######ttttt","tttttttttttttttt"]);
+TILE.cabinet=art([
+"################","#              #","# ############ #","# #..........# #",
+"# #....##....# #","# ############ #","#              #","# ############ #",
+"# #..........# #","# #....##....# #","# ############ #","#              #",
+"# ############ #","# #..........# #","################","tttttttttttttttt"]);
+TILE.boxes=art([
+"tttttttttttttttt","tttt##########tt","tttt#........#tt","tttt#..####..#tt",
+"tttt#........#tt","tt##########..#t","tt#........#..#t","tt#..####..#..#t",
+"tt#........#..#t","tt#........####t","tt#..####..#tttt","tt#........#tttt",
+"tt##########tttt","tttttttttttttttt","tttttttttttttttt","tttttttttttttttt"]);
+TILE.term=art([
+"tttttttttttttttt","tt############tt","tt#::::::::::#tt","tt#:  ::  :: :#t",
+"tt#: ::: :: ::#t","tt#:  :  ::  :#t","tt#: :::  :: :#t","tt#::::::::::#tt",
+"tt############tt","tttt##....##tttt","tttt##....##tttt","tt##########tttt",
+"tt#........#tttt","tt##########tttt","tttttttttttttttt","tttttttttttttttt"]);
+TILE.board=art([
+"################","#..............#","#.############.#","#.#  ##      #.#",
+"#.#  #  ##   #.#","#.#         ##.#","#.#   ##     #.#","#.#  #  #  # #.#",
+"#.#        ##.#.","#.############.#","#..............#","################",
+"tttttttttttttttt","tttttttttttttttt","tttttttttttttttt","tttttttttttttttt"]);
+TILE.lift=art([
+"################","#::::::::::::::#","#:############:#","#:#..........#:#",
+"#:#.        .#:#","#:#. ##  ## .#:#","#:#.  #  #  .#:#","#:#.  #  #  .#:#",
+"#:#. ##  ## .#:#","#:#.        .#:#","#:#..........#:#","#:############:#",
+"#::::::::::::::#","################","tttttttttttttttt","tttttttttttttttt"]);
+TILE.mat=art([
+"################","#..............#","#.############.#","#.#          #.#",
+"#.#          #.#","#.#          #.#","#.#          #.#","#.#          #.#",
+"#.############.#","#..............#","################","                ",
+"                ","                ","                ","                "]);
+
+const SOLID=new Set(["wall","desk","rack","cabinet","boxes","term","board","plant","lift"]);
+
+function drawTile(t,x,y){
+  const a=TILE[t]; if(!a)return;
+  for(let j=0;j<16;j++)for(let i=0;i<16;i++){ const c=a[j][i]; if(c>=0) px(x+i,y+j,c); }
+}
+
+/* ── Character sprites: 16x16, 't' transparent ── */
+const CH={};
+function chart(rows){ return art(rows); }
+CH.pdown=[chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#          #tt","tt# ##    ## #tt","tt#          #tt","tt#   ####   #tt",
+"ttt#        #ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#....##....#tt","tt#..........#tt","ttt##::::::##ttt","tttt##tttt##tttt"]),
+chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#          #tt","tt# ##    ## #tt","tt#          #tt","tt#   ####   #tt",
+"ttt#        #ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#....##....#tt","tt#..........#tt","ttt#::::::::#ttt","ttt##tttttt##ttt"])];
+CH.pup=[chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt",
+"ttt#::::::::#ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#..........#tt","tt#..........#tt","ttt##::::::##ttt","tttt##tttt##tttt"]),
+chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt",
+"ttt#::::::::#ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#..........#tt","tt#..........#tt","ttt#::::::::#ttt","ttt##tttttt##ttt"])];
+CH.pside=[chart([
+"tttt######tttttt","ttt##::::##ttttt","tt#::::::::#tttt","tt#::::::::#tttt",
+"tt#      ::#tttt","tt# ##   ::#tttt","tt#      ::#tttt","tt#  ###  :#tttt",
+"ttt#      #ttttt","tttt######tttttt","ttt#......#ttttt","tt#........#tttt",
+"tt#...##...#tttt","tt#........#tttt","ttt#::::::#ttttt","tttt##tt##tttttt"]),
+chart([
+"tttt######tttttt","ttt##::::##ttttt","tt#::::::::#tttt","tt#::::::::#tttt",
+"tt#      ::#tttt","tt# ##   ::#tttt","tt#      ::#tttt","tt#  ###  :#tttt",
+"ttt#      #ttttt","tttt######tttttt","ttt#......#ttttt","tt#........#tttt",
+"tt#...##...#tttt","tt#........#tttt","ttt#::::::#ttttt","ttt##tttt##ttttt"])];
+
+/* NPC sprites */
+CH.npcA=[chart([
+"ttttt######ttttt","tttt#......#tttt","tt##.######.##tt","tt#...####...#tt",
+"tt#..::::::..#tt","tt#..#::::#..#tt","tt#..::::::..#tt","tt#...####...#tt",
+"ttt#.::::::.#ttt","tttt##::::##tttt","ttt#..####..#ttt","tt#.........#ttt",
+"tt#..#::::#..#tt","tt#..#::::#..#tt","ttt##ttttt##tttt","tttt##ttttt##ttt"])];
+CH.npcB=[chart([
+"ttttt######ttttt","tttt#::::::#tttt","tt##::::::::##tt","tt#:.######.:#tt",
+"tt#:.#....#.:#tt","tt#:.#.##.#.:#tt","tt#:.#....#.:#tt","tt#:.######.:#tt",
+"ttt#::::::::#ttt","tttt#:....:#tttt","ttt#::####::#ttt","tt#:::::::::#ttt",
+"tt#:.#::::#.:#tt","tt#::#::::#::#tt","ttt##ttttt##tttt","tttt##ttttt##ttt"])];
+CH.npcC=[chart([
+"tttt########tttt","ttt#........#ttt","tt#..######..#tt","tt#.#::::::#.#tt",
+"tt#.#:#::#:#.#tt","tt#.#::::::#.#tt","tt#.#:####:#.#tt","tt#.#::::::#.#tt",
+"tt#..######..#tt","ttt#........#ttt","ttt#..####..#ttt","tt#..######..#tt",
+"tt#.#......#.#tt","tt#.#......#.#tt","ttt##tttttt##ttt","tttt##ttttt##ttt"])];
+
+function drawSprite(a,x,y,flip){
+  for(let j=0;j<16;j++)for(let i=0;i<16;i++){
+    const c=a[j][flip?15-i:i]; if(c>=0) px(x+i,y+j,c);
+  }
+}
+
+/* ── Creature sprites: 32x32 drawn from 16x16 art, doubled ── */
+const MON={};
+MON.MULTIFACTOR=chart([
+"tttt####tttt####","ttt#....#tt#...#","tt#..##..#t#.##.","tt#.#::#.#t#.::#",
+"tt#..##..#t#.##.","ttt#....#tt#...#","tttt#..#tttt#..#","ttttt##tttttt##t",
+"tttttt########tt","ttttt#........#t","tttt#..######..#","tttt#.#::::#..#t",
+"tttt#..######..#","ttttt#........#t","tttttt#..##..#tt","ttttttt######ttt"]);
+MON.LOGKEEPER=chart([
+"ttt##########ttt","tt#..........#tt","t#..##....##..#t","t#.#::#..#::#.#t",
+"t#.#:##..##:#.#t","t#..##....##..#t","t#.....##.....#t","t#....####....#t",
+"tt#..........#tt","tt#.########.#tt","tt#.#......#.#tt","tt#.#.####.#.#tt",
+"tt#.#......#.#tt","tt#.########.#tt","ttt#........#ttt","tttt##tttt##tttt"]);
+MON.PATCHLING=chart([
+"tttttt####tttttt","tttt##....##tttt","ttt#........#ttt","tt#..##..##..#tt",
+"tt#.#::#.#::#.#t","tt#..##..##..#tt","t#............#t","t#...######...#t",
+"t#..#......#..#t","t#...######...#t","t#............#t","tt#..........#tt",
+"ttt#........#ttt","tttt########tttt","ttt#..#tt#..#ttt","ttt####tt####ttt"]);
+MON.BACKUPWYRM=chart([
+"ttttttt#####tttt","tttttt#.....#ttt","tttt##..###..#tt","ttt#...#:::#..#t",
+"tt#.....###..#tt","t#...##.....#ttt","t#..####...#tttt","t#...##..##ttttt",
+"tt#.....##..#ttt","ttt#.......#tttt","tt#..#####..#ttt","t#..#.....#..#tt",
+"t#..#.###.#..#tt","tt#..#####..#ttt","ttt#.......#tttt","tttt#######ttttt"]);
+MON.ENCRYPTOR=chart([
+"tt############tt","tt#..........#tt","tt#.########.#tt","tt#.#::::::#.#tt",
+"tt#.#:####:#.#tt","tt#.#:#..#:#.#tt","tt#.#:####:#.#tt","tt#.#::::::#.#tt",
+"tt#.########.#tt","tt#..........#tt","tt#.##.##.##.#tt","tt#..........#tt",
+"tt############tt","ttt#..#tt#..#ttt","ttt#..#tt#..#ttt","ttt####tt####ttt"]);
+MON.SHAREDPASS=chart([
+"tt####tttt####tt","t#....#tt#....#t","#..##..#t#..##.#","#.#::#..#..#::#.",
+"#..##....##..#.t","t#....####....#t","tt####......###t","tttt#........#tt",
+"ttt#..######..#t","tt#..#::::::#..#","tt#.#:##::##:#.#","tt#.#::::::::#.#",
+"tt#..########..#","ttt#..........#t","tttt#.##..##.#tt","ttttt########ttt"]);
+MON.STALEACCT=chart([
+"tttt########tttt","tt##........##tt","t#............#t","#....######....#",
+"#...#::::::#...#","#..#:##::##:#..#","#..#::::::::#..#","#..#:.####.:#..#",
+"#..#::::::::#..#","#...#::::::#...#","#....######....#","t#............#t",
+"tt#..........#tt","tt#.##.##.##.#tt","tt#.#t.#t.#t.#tt","ttt#tt##tt##tttt"]);
+MON.OPENPORT=chart([
+"################","#..............#","#.####....####.#","#.#::#....#::#.#",
+"#.####....####.#","#..............#","#..############.","#..#..........#.",
+"#..#.##.##.##.#.","#..#..........#.","#..#.##.##.##.#.","#..#..........#.",
+"#..############.","#..............#","#.##.##..##.##.#","################"]);
+MON.NOLOGS=chart([
+"tttt########tttt","tt##::::::::##tt","t#::::::::::::#t","#::::::::::::::#",
+"#::::::::::::::#","#::::##::##::::#","#::::##::##::::#","#::::::::::::::#",
+"#::::::::::::::#","#::::######::::#","#::::::::::::::#","#::::::::::::::#",
+"t#::::::::::::#t","tt##::::::::##tt","tttt########tttt","tttttttttttttttt"]);
+MON.TICKETSTORM=chart([
+"#..##..##..##..#","..####..####..##","#..##..##..##..#","tt############tt",
+"t#............#t","#..##......##..#","#.#::#....#::#.#","#..##......##..#",
+"#..............#","#...##########.#","#..#..........#.","#..#.########.#.",
+"#..#..........#.","#...##########.#","t#............#t","tt############tt"]);
+MON.SHADOWIT=chart([
+"tttt##tttt##tttt","ttt#..#tt#..#ttt","tt#....##....#tt","t#...##..##...#t",
+"#...#::#t#::#...","#....##....##..#","#..............#","#....######....#",
+"#...#......#...#","#..#..####..#..#","#...#......#...#","#....######....#",
+"t#............#t","tt#....##....#tt","ttt#..#tt#..#ttt","tttt##tttt##tttt"]);
+
+MON.INVENTORY=chart([
+"ttt##########ttt","tt#..........#tt","tt#.########.#tt","tt#.#::::::#.#tt",
+"tt#.#:#..#:#.#tt","tt#.#::::::#.#tt","tt#.########.#tt","tt#..........#tt",
+"tt#.##.##.##.#tt","tt#..........#tt","tt#.##.##.##.#tt","tt#..........#tt",
+"tt#.##.##.##.#tt","tt#..........#tt","ttt##########ttt","tttt##ttt##tttt "]);
+
+function drawMon(name,x,y,scale){
+  const a=MON[name]; if(!a)return; scale=scale||2;
+  for(let j=0;j<16;j++)for(let i=0;i<16;i++){
+    const c=a[j][i]; if(c<0)continue;
+    for(let sj=0;sj<scale;sj++)for(let si=0;si<scale;si++) px(x+i*scale+si,y+j*scale+sj,c);
+  }
+}
+
+/* ══ DATA ═══════════════════════════════════════════════════════════
+   Every battle is a real safeguard. Control IDs are CIS Controls v8
+   and NIST CSF 2.0 functions. Verify against source docs before you
+   put any of this in front of an auditor.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const TYPES=["ACCESS","DETECT","HARDEN","RECOVER","GOVERN"];
+
+const MOVES={
+  COLLECT:{name:"Collect",kind:"evidence",pow:4,
+    blurb:"Pulls a config export into the evidence bag."},
+  TEST:{name:"Test",kind:"test",pow:9,
+    blurb:"Damage scales with evidence on hand."},
+  REMEDIATE:{name:"Remediate",kind:"remediate",pow:20,cost:2,
+    blurb:"Heavy. Costs 2 budget."},
+  DOCUMENT:{name:"Document",kind:"document",pow:5,
+    blurb:"Writes policy. Blunts the finding's attack."},
+  ATTEST:{name:"Attest",kind:"attest",pow:12,
+    blurb:"Strong only if the control is fully implemented."}
+};
+
+const CONTROLS={
+  MULTIFACTOR:{name:"MULTIFACTOR",type:"ACCESS",hp:34,atk:9,
+    cis:["6.3","6.4"],csf:"PROTECT",
+    moves:["COLLECT","TEST","DOCUMENT","REMEDIATE"],
+    dex:"Two keys that refuse to work alone. Halves account takeover risk wherever it is actually enforced."},
+  LOGKEEPER:{name:"LOGKEEPER",type:"DETECT",hp:30,atk:8,
+    cis:["8.2","8.5"],csf:"DETECT",
+    moves:["COLLECT","TEST","DOCUMENT","ATTEST"],
+    dex:"Hoards audit logs. Useless unless someone reads them, which is the whole finding, really."},
+  PATCHLING:{name:"PATCHLING",type:"HARDEN",hp:32,atk:10,
+    cis:["7.3","7.4"],csf:"PROTECT",
+    moves:["COLLECT","TEST","REMEDIATE","DOCUMENT"],
+    dex:"Small, bandaged, tireless. Closes known holes on a schedule you have to be able to prove."},
+  BACKUPWYRM:{name:"BACKUPWYRM",type:"RECOVER",hp:40,atk:7,
+    cis:["11.2","11.3"],csf:"RECOVER",
+    moves:["COLLECT","TEST","ATTEST","DOCUMENT"],
+    dex:"A backup nobody has restored from is a rumour. Feed it a test restore twice a year."},
+  INVENTORY:{name:"INVENTORY",type:"GOVERN",hp:36,atk:8,
+    cis:["1.1","2.1"],csf:"IDENTIFY",
+    moves:["COLLECT","DOCUMENT","TEST","ATTEST"],
+    dex:"A ledger that knows what you own. Every other control is a guess until this one is right."},
+  ENCRYPTOR:{name:"ENCRYPTOR",type:"HARDEN",hp:31,atk:11,
+    cis:["3.11"],csf:"PROTECT",
+    moves:["COLLECT","TEST","REMEDIATE","ATTEST"],
+    dex:"A box that only opens for the key holder. Ask it where the keys live and watch it get evasive."}
+};
+
+const FINDINGS={
+  SHAREDPASS:{name:"SHAREDPASS",hp:30,atk:8,weak:"ACCESS",
+    cis:"5.2",csf:"PROTECT",lik:4,imp:4,
+    intro:"A wad of sticky notes with one password on all of them.",
+    fix:"Deploy a password manager. Enforce unique credentials per account.",
+    ev:"Password policy export; password manager licence roster."},
+  STALEACCT:{name:"STALEACCT",hp:34,atk:9,weak:"ACCESS",
+    cis:"5.3",csf:"PROTECT",lik:4,imp:5,
+    intro:"An account belonging to someone who left in March. Still enabled.",
+    fix:"Disable accounts after 45 days dormant. Automate against HR feed.",
+    ev:"Dormant account report; offboarding ticket sample of 5."},
+  OPENPORT:{name:"OPENPORT",hp:38,atk:11,weak:"HARDEN",
+    cis:"4.8",csf:"PROTECT",lik:3,imp:5,
+    intro:"A doorway with teeth. Nobody remembers opening it.",
+    fix:"Disable unnecessary services. Review firewall rules quarterly.",
+    ev:"Port scan output; firewall ruleset with business justification."},
+  NOLOGS:{name:"NOLOGS",hp:36,atk:10,weak:"DETECT",
+    cis:"8.2",csf:"DETECT",lik:3,imp:5,
+    intro:"A void where last Tuesday should be.",
+    fix:"Enable audit logging on all assets. Ship to central store, 90d retention.",
+    ev:"Logging config; retention setting screenshot; sample log query."},
+  SHADOWIT:{name:"SHADOWIT",hp:33,atk:9,weak:"GOVERN",
+    cis:"2.3",csf:"IDENTIFY",lik:5,imp:3,
+    intro:"Four departments bought the same tool on four credit cards.",
+    fix:"Maintain a software inventory. Route purchases through vendor review.",
+    ev:"Software inventory export; approved-vendor list; SSO app list."},
+  TICKETSTORM:{name:"TICKETSTORM",hp:62,atk:12,weak:"HARDEN",boss:true,
+    cis:"7.3",csf:"PROTECT",lik:5,imp:4,
+    intro:"Fifty tickets at once. Every one of them is the same ticket.",
+    fix:"Automate the repeating task. Patch the root cause, not the symptom.",
+    ev:"Ticket volume report before/after; automation script and run log."}
+};
+
+/* ── Acts ── */
+const ACTS=[
+  {n:1,name:"THE HELPDESK",sub:"Sublevel 2",goal:"Survive the queue."},
+  {n:2,name:"THE DOMAIN",sub:"Directory Floor",goal:"Least privilege."},
+  {n:3,name:"THE CLOUD",sub:"Region us-west-2",goal:"Alert before 3am."},
+  {n:4,name:"THE FRAMEWORK",sub:"Policy Wing",goal:"Assess the gap."},
+  {n:5,name:"THE AUDIT",sub:"Conference Rm A",goal:"15 controls, random."}
+];
+
+/* ── Maps ──
+   . floor  , carpet  # wall  D desk  R rack  o door  p plant
+   c cabinet  b boxes  t terminal  w board  L lift  m mat        */
+const MAPS={
+  helpdesk:{
+    name:"SUBLEVEL 2 : DESK",
+    rows:[
+      "####################",
+      "#w..............w..#",
+      "#..DDDD....DDDD....#",
+      "#..DDDD....DDDD..p.#",
+      "#,,................#",
+      "#,,..DDDD..DDDD....#",
+      "#p...DDDD..DDDD....#",
+      "#..................#",
+      "#..t.........c.c...#",
+      "#..................#",
+      "#####o########o#####",
+      "#..................#",
+      "#.p...........b.b..#",
+      "#.................L#",
+      "#..................#",
+      "####################"
+    ],
+    spawn:{x:9,y:8,dir:"up"},
+    doors:[{x:14,y:10,to:"closet",tx:9,ty:13}],
+    lift:{x:18,y:13}
+  },
+  closet:{
+    name:"SERVER CLOSET B",
+    rows:[
+      "####################",
+      "#RRRR#....#RRRR....#",
+      "#RRRR#....#RRRR..b.#",
+      "#....#....#........#",
+      "#....#....#..t.....#",
+      "#RRRR#....#........#",
+      "#RRRR#....#RRRR....#",
+      "#....#....#RRRR....#",
+      "#.........#........#",
+      "#..b.b.............#",
+      "#........c.c.......#",
+      "#..................#",
+      "#.........m........#",
+      "#..................#",
+      "####################"
+    ],
+    spawn:{x:9,y:12,dir:"up"},
+    doors:[{x:9,y:12,to:"helpdesk",tx:14,ty:11}]
+  }
+};
+
+/* ── NPCs ── */
+const NPCS={
+  helpdesk:[
+    {x:9,y:2,spr:"npcA",name:"MARGIT",face:"down",kind:"heal",
+     lines:[["MARGIT, TIER 2","Sublevel 2 is where tickets come to die. Welcome."],
+            ["MARGIT","Queue's at fifty. Fifty. Same ticket, fifty times."],
+            ["MARGIT","Talk to DEV at the terminal. He'll set you up with a CONTROL."]],
+     after:[["MARGIT","Fifty tickets. One root cause. Go find it."]]},
+    {x:15,y:6,spr:"npcB",name:"DEV",face:"left",kind:"giver",gives:"PATCHLING",need:0,
+     lines:[["DEV, SYSTEMS","New hire? Here. Take this. Don't lose it."],
+            ["DEV","A CONTROL isn't a tool. It's a claim you can defend with evidence."],
+            ["DEV","Beat a FINDING and it goes in your RISK REGISTER. That's the real deliverable."]],
+     after:[["DEV","Evidence goes stale in 90 days. Re-collect before the audit."]]},
+    {x:5,y:8,spr:"npcC",name:"AUDIT BOT",face:"right",kind:"giver",gives:"MULTIFACTOR",need:1,
+     lines:[["AUDIT BOT v0.9","QUERY: Do you have evidence?"],
+            ["AUDIT BOT v0.9","A screenshot with no timestamp is not evidence. It is a picture."],
+            ["AUDIT BOT v0.9","Press ENTER. Read your RISK REGISTER. It is the only thing I will ask about."]],
+     locked:[["AUDIT BOT v0.9","QUERY: Do you have evidence?"],
+             ["AUDIT BOT v0.9","Log one finding. Then I will issue you an ACCESS control."]],
+     after:[["AUDIT BOT v0.9","Undated evidence is a picture, not a record."]]},
+    {x:17,y:12,spr:"npcA",name:"ROSA",face:"left",kind:"giver",gives:"INVENTORY",need:2,
+     lines:[["ROSA, FACILITIES","Lift's locked till you clear the queue. Manager's orders."],
+            ["ROSA","Nobody knows what we own. Take the ledger. It is the only thing SHADOWIT fears."]],
+     locked:[["ROSA, FACILITIES","Lift's locked till the queue clears. Manager's orders."],
+             ["ROSA","Log two findings and I'll dig out something that helps."]],
+     after:[["ROSA","Count what you own before you claim you protect it."]]}
+  ],
+  closet:[
+    {x:14,y:4,spr:"npcB",name:"KENJI",face:"down",kind:"giver",gives:"LOGKEEPER",need:0,
+     lines:[["KENJI, INFRA","Rack B logs to nowhere. Has for two years."],
+            ["KENJI","Nobody noticed because nobody looked. That's the finding, not the config."],
+            ["KENJI","Take LOGKEEPER. It hits NOLOGS for double."]],
+     after:[["KENJI","Retention setting, not just the logging toggle. Auditors ask for both."]]}
+  ]
+};
+
+/* Wild encounter zones: tile positions that trigger a fixed finding */
+const ENCOUNTERS={
+  helpdesk:[
+    {x:2,y:4,f:"SHAREDPASS"},{x:3,y:4,f:"SHAREDPASS"},
+    {x:2,y:5,f:"SHAREDPASS"},{x:3,y:5,f:"SHAREDPASS"},
+    {x:15,y:12,f:"SHADOWIT"},{x:13,y:12,f:"SHADOWIT"}
+  ],
+  closet:[
+    {x:6,y:4,f:"NOLOGS"},{x:7,y:4,f:"NOLOGS"},{x:6,y:5,f:"NOLOGS"},
+    {x:4,y:9,f:"STALEACCT"},{x:7,y:9,f:"STALEACCT"},
+    {x:16,y:7,f:"OPENPORT"},{x:16,y:8,f:"OPENPORT"}
+  ]
+};
+
+/* ══ STATE ══════════════════════════════════════════════════════════ */
+const S={
+  scene:"title", map:"helpdesk",
+  tx:9,ty:8, ox:0,oy:0, dir:"down", step:0, walking:false, anim:0,
+  party:[], evidence:[], register:[], budget:6, day:1,
+  act:1, flags:{}, cleared:{},
+  msg:null, menuIdx:0, subIdx:0, scroll:0,
+  battle:null, tick:0, fade:0, notice:null, noticeT:0
+};
+const keys={};
+const PRESSED={};
+addEventListener("keydown",e=>{
+  const k=norm(e.key); if(!k)return; e.preventDefault();
+  if(!keys[k]) PRESSED[k]=true; keys[k]=true;
+});
+addEventListener("keyup",e=>{ const k=norm(e.key); if(k){keys[k]=false;} });
+function norm(k){
+  k=k.toLowerCase();
+  if(k==="arrowup"||k==="w")return"up";
+  if(k==="arrowdown"||k==="s")return"down";
+  if(k==="arrowleft"||k==="a")return"left";
+  if(k==="arrowright"||k==="d")return"right";
+  if(k==="z"||k===" ")return"ok";
+  if(k==="x"||k==="escape"||k==="backspace")return"back";
+  if(k==="enter")return"menu";
+  return null;
+}
+function hit(k){ if(PRESSED[k]){PRESSED[k]=false;return true;} return false; }
+function clearPressed(){ for(const k in PRESSED) PRESSED[k]=false; }
+
+/* ══ SAVE ═══════════════════════════════════════════════════════════ */
+async function save(){
+  const data={map:S.map,tx:S.tx,ty:S.ty,dir:S.dir,party:S.party,evidence:S.evidence,
+    register:S.register,budget:S.budget,day:S.day,act:S.act,flags:S.flags,cleared:S.cleared};
+  try{ if(window.storage) await window.storage.set("cq:save",JSON.stringify(data)); }
+  catch(e){ /* storage unavailable; session-only play */ }
+}
+async function load(){
+  try{
+    if(!window.storage) return false;
+    const r=await window.storage.get("cq:save");
+    if(!r) return false;
+    const d=JSON.parse(r.value); Object.assign(S,d); return true;
+  }catch(e){ return false; }
+}
+
+/* ══ MAP HELPERS ════════════════════════════════════════════════════ */
+const TKEY={".":"floor",",":"carpet","#":"wall","D":"desk","R":"rack","o":"door",
+  "p":"plant","c":"cabinet","b":"boxes","t":"term","w":"board","L":"lift","m":"mat"};
+function mp(){ return MAPS[S.map]; }
+function tileAt(x,y){
+  const r=mp().rows;
+  if(y<0||y>=r.length||x<0||x>=r[0].length) return "#";
+  return r[y][x];
+}
+function solidAt(x,y){
+  const t=TKEY[tileAt(x,y)]||"floor";
+  if(SOLID.has(t)) return true;
+  for(const n of (NPCS[S.map]||[])) if(n.x===x&&n.y===y) return true;
+  return false;
+}
+function npcAt(x,y){ return (NPCS[S.map]||[]).find(n=>n.x===x&&n.y===y); }
+function encAt(x,y){
+  const e=(ENCOUNTERS[S.map]||[]).find(e=>e.x===x&&e.y===y);
+  if(!e) return null;
+  if(S.cleared[e.f]) return null;
+  return e;
+}
+function camera(){
+  const mw=mp().rows[0].length*TS, mh=mp().rows.length*TS;
+  let cx=S.tx*TS+S.ox+8-W/2, cy=S.ty*TS+S.oy+8-H/2;
+  cx=Math.max(0,Math.min(mw-W,cx)); cy=Math.max(0,Math.min(mh-H,cy));
+  return {cx:Math.round(cx),cy:Math.round(cy)};
+}
+
+/* ══ DIALOGUE ═══════════════════════════════════════════════════════ */
+function say(pages,onDone){
+  const out=[];
+  for(const p of pages){
+    const ls=wrap(p[1],23);
+    for(let i=0;i<ls.length;i+=3) out.push([i===0?p[0]:"",ls.slice(i,i+3).join(" ")]);
+  }
+  S.msg={pages:out,i:0,ch:0,done:false,onDone:onDone||null};
+  S.scene="dialog"; clearPressed();
+}
+function drawBox(x,y,w,h){
+  rect(x,y,w,h,3); frame(x,y,w,h,0); frame(x+2,y+2,w-4,h-4,1);
+}
+function drawMsg(){
+  const p=S.msg.pages[S.msg.i]; if(!p)return;
+  const who=p[0], lines=wrap(p[1],23).slice(0,3);
+  drawBox(0,92,160,52);
+  if(who){ const w=textw(who)+10; rect(4,84,w,12,3); frame(4,84,w,12,0); text(who,9,86,0); }
+  let shown=S.msg.ch, y=100;
+  for(const ln of lines){
+    text(ln.substring(0,Math.max(0,shown)),9,y,0);
+    shown-=ln.length; y+=12;
+    if(shown<=0) break;
+  }
+  if(S.msg.done && (S.tick>>4)%2===0) text("\u2665",148,131,1);
+}
+function msgLen(p){ return wrap(p[1],23).slice(0,3).join("").length; }
+function updMsg(){
+  const p=S.msg.pages[S.msg.i];
+  const total=msgLen(p);
+  if(!S.msg.done){
+    S.msg.ch+= keys.ok?3:1;
+    if(S.msg.ch>=total){S.msg.ch=total;S.msg.done=true;}
+  } else if(hit("ok")||hit("back")){
+    S.msg.i++; S.msg.ch=0; S.msg.done=false;
+    if(S.msg.i>=S.msg.pages.length){
+      const cb=S.msg.onDone; S.msg=null; S.scene="world";
+      if(cb) cb();
+    }
+  }
+}
+function notice(t){ S.notice=t; S.noticeT=110; }
+
+/* ══ WORLD ══════════════════════════════════════════════════════════ */
+function updWorld(){
+  if(hit("menu")){ S.scene="menu"; S.menuIdx=0; return; }
+  if(S.walking){
+    S.step+=2; const d=S.step;
+    if(S.dir==="up")S.oy=-d; if(S.dir==="down")S.oy=d;
+    if(S.dir==="left")S.ox=-d; if(S.dir==="right")S.ox=d;
+    S.anim=(S.step>4&&S.step<13)?1:0;
+    if(S.step>=16){
+      S.walking=false; S.step=0; S.ox=0; S.oy=0; S.anim=0;
+      if(S.dir==="up")S.ty--; if(S.dir==="down")S.ty++;
+      if(S.dir==="left")S.tx--; if(S.dir==="right")S.tx++;
+      arrive();
+    }
+    return;
+  }
+  if(hit("ok")){ interact(); return; }
+  let d=null;
+  if(keys.up)d="up"; else if(keys.down)d="down";
+  else if(keys.left)d="left"; else if(keys.right)d="right";
+  if(d){
+    S.dir=d;
+    const n=step(S.tx,S.ty,d);
+    if(!solidAt(n.x,n.y)) S.walking=true;
+  }
+}
+function step(x,y,d){
+  if(d==="up")return{x,y:y-1}; if(d==="down")return{x,y:y+1};
+  if(d==="left")return{x:x-1,y}; return{x:x+1,y};
+}
+function arrive(){
+  const m=mp();
+  const dr=(m.doors||[]).find(d=>d.x===S.tx&&d.y===S.ty);
+  if(dr){ S.map=dr.to; S.tx=dr.tx; S.ty=dr.ty; notice(MAPS[S.map].name); save(); return; }
+  if(m.lift&&m.lift.x===S.tx&&m.lift.y===S.ty){ tryLift(); return; }
+  const e=encAt(S.tx,S.ty);
+  if(e) startBattle(e.f);
+}
+function interact(){
+  const n=step(S.tx,S.ty,S.dir);
+  const npc=npcAt(n.x,n.y);
+  if(npc){ talkTo(npc); return; }
+  const t=TKEY[tileAt(n.x,n.y)];
+  if(t==="term"){ termUse(); return; }
+  else if(t==="board") say([["WHITEBOARD","EVIDENCE = artifact + date + who produced it. Anything\nless is an anecdote."]]);
+  else if(t==="rack") say([["RACK","Fans, dust, and a label maker nobody has used since 2019."]]);
+  else if(t==="cabinet") say([["CABINET","Binders of policies. Last reviewed: unclear."]]);
+  else if(t==="boxes") say([["BOXES","Asset tags on none of them. CIS 1.1 would like a word."]]);
+  else if(t==="lift") tryLift();
+}
+function talkTo(npc){
+  npc.face=opposite(S.dir);
+  if(npc.kind==="giver"&&!S.flags["gave_"+npc.gives]){
+    if(S.register.length<(npc.need||0)){ say(npc.locked||npc.lines); return; }
+    say(npc.lines,()=>{
+      S.flags["gave_"+npc.gives]=true;
+      addControl(npc.gives);
+      const c=CONTROLS[npc.gives];
+      say([["",c.name+" joined your party!"],
+           ["",c.name+" is a "+c.type+" control. CIS "+c.cis.join(", ")+"."],
+           ["","Findings weak to "+c.type+" take double from Test and\nRemediate."]]);
+    });
+    return;
+  }
+  if(npc.kind==="heal"&&S.party.length&&S.flags["met_"+npc.name]){
+    const hurt=S.party.some(p=>p.hp<p.max);
+    S.party.forEach(p=>p.hp=p.max);
+    say(hurt?[["MARGIT","You look rough. Sit. Coffee's terrible but it's free."],
+              ["","Your CONTROLS were restored to full."]]
+            :[["MARGIT","Queue's at "+(50-clearedCount()*9)+". Go on."]]);
+    return;
+  }
+  const done=npc.kind==="giver"?S.flags["gave_"+npc.gives]:S.flags["met_"+npc.name];
+  S.flags["met_"+npc.name]=true;
+  say(done&&npc.after?npc.after:npc.lines);
+}
+function opposite(d){ return {up:"down",down:"up",left:"right",right:"left"}[d]; }
+
+function clearedCount(){
+  return ["SHAREDPASS","SHADOWIT","NOLOGS","STALEACCT","OPENPORT"].filter(f=>S.cleared[f]).length;
+}
+function termUse(){
+  if(S.map==="closet"){
+    say([["TERMINAL","> grep -c . /var/log/audit.log\n0","Two years of nothing."]]);
+    return;
+  }
+  if(S.cleared.TICKETSTORM){
+    say([["TERMINAL","> tail -f queue.log\n3 open. All different.\n> _"]]);
+    return;
+  }
+  const got=clearedCount();
+  if(got>=3){
+    say([["TERMINAL","> tail -f queue.log\n50 open. Same ticket.\n> trace --root-cause"],
+         ["TERMINAL","Something is generating them. It is still running."]],()=>startBattle("TICKETSTORM"));
+  } else {
+    say([["TERMINAL","> tail -f queue.log\n50 open. 50 identical.","Root cause trace needs "+(3-got)+" more logged finding(s)."]]);
+  }
+}
+function tryLift(){
+  const got=clearedCount();
+  if(!S.cleared.TICKETSTORM){
+    if(got>=3) say([["LIFT","LOCKED.","Root cause still running. Terminal, desk floor."]]);
+    else say([["LIFT","LOCKED.","Log "+(3-got)+" more finding(s) to trace the root cause."]]);
+    return;
+  }
+  say([["LIFT","ACT 1 COMPLETE."],
+       ["","Findings logged: "+S.register.length+" Evidence on file: "+S.evidence.length],
+       ["","Open the menu and choose EXPORT. Take the register\nand the POA&M with you."],
+       ["","Act 2: THE DOMAIN is not built. That part is yours.\nThe README says how."]]);
+}
+
+function drawWorld(){
+  clear(3);
+  const {cx,cy}=camera();
+  const m=mp();
+  const x0=Math.floor(cx/TS), y0=Math.floor(cy/TS);
+  for(let j=-1;j<=H/TS+1;j++)for(let i=-1;i<=W/TS+1;i++){
+    const tx=x0+i, ty=y0+j;
+    const t=TKEY[tileAt(tx,ty)]||"floor";
+    const base=(t==="carpet")?"carpet":"floor";
+    drawTile(base,tx*TS-cx,ty*TS-cy);
+    if(t!=="floor"&&t!=="carpet") drawTile(t,tx*TS-cx,ty*TS-cy);
+  }
+  // encounter shimmer
+  for(const e of (ENCOUNTERS[S.map]||[])){
+    if(S.cleared[e.f])continue;
+    const sx=e.x*TS-cx, sy=e.y*TS-cy;
+    if((S.tick>>5)%2===0){ px(sx+7,sy+7,1); px(sx+8,sy+8,1); }
+  }
+  const drawables=[];
+  for(const n of (NPCS[S.map]||[])) drawables.push({y:n.y*TS,f:()=>{
+    const a=CH[n.spr][0]; drawSprite(a,n.x*TS-cx,n.y*TS-cy,false);
+  }});
+  drawables.push({y:S.ty*TS+S.oy+1,f:()=>{
+    let set,flip=false;
+    if(S.dir==="down")set=CH.pdown; else if(S.dir==="up")set=CH.pup;
+    else {set=CH.pside; flip=(S.dir==="left");}
+    drawSprite(set[S.anim],S.tx*TS+S.ox-cx,S.ty*TS+S.oy-cy,flip);
+  }});
+  drawables.sort((a,b)=>a.y-b.y).forEach(d=>d.f());
+
+  if(S.noticeT>0){
+    const t=mp().name, w=textw(t)+12;
+    rect(4,4,w,14,3); frame(4,4,w,14,0); text(t,10,7,0);
+    S.noticeT--;
+  }
+}
+
+/* ══ PARTY / REGISTER ═══════════════════════════════════════════════ */
+function addControl(id){
+  const c=CONTROLS[id];
+  S.party.push({id,name:c.name,type:c.type,lvl:1,hp:c.hp,max:c.hp,atk:c.atk,
+    moves:c.moves.slice(),xp:0});
+}
+function alive(){ return S.party.filter(p=>p.hp>0); }
+function rating(n){ return n>=15?"CRITICAL":n>=10?"HIGH":n>=5?"MODERATE":"LOW"; }
+function today(){ const d=new Date(); d.setDate(d.getDate()+S.day-1); return d.toISOString().slice(0,10); }
+function dueIn(days){ const d=new Date(); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10); }
+
+function logFinding(fid,evCount,treatment){
+  const f=FINDINGS[fid];
+  const inherent=f.lik*f.imp;
+  const reduction=Math.min(0.75,evCount*0.18);
+  const residual=(treatment==="ACCEPTED")?inherent:Math.max(1,Math.round(inherent*(1-reduction)));
+  const entry={
+    id:"R-"+String(S.register.length+1).padStart(3,"0"),
+    finding:f.name, cis:f.cis, csf:f.csf,
+    lik:f.lik, imp:f.imp, inherent, residual,
+    treatment, owner:"IT Operations", opened:today(), due:dueIn(30),
+    status:(treatment==="ACCEPTED")?"Accepted":"Remediation in progress",
+    fix:f.fix, evidence:f.ev, evCount
+  };
+  S.register.push(entry);
+  S.evidence.push({name:f.ev,ctrl:f.cis,date:today(),age:0});
+  S.cleared[fid]=true;
+  return entry;
+}
+
+/* ══ BATTLE ═════════════════════════════════════════════════════════ */
+function startBattle(fid){
+  if(!S.party.length){ say([["","You have no CONTROLS. Talk to DEV at the desk\nfloor first."]]); return; }
+  const f=FINDINGS[fid];
+  const act=alive()[0];
+  S.battle={fid,f,hp:f.hp,max:f.hp,atk:f.atk,ev:0,me:act,
+    phase:"intro",menu:0,log:[],shake:0,flash:0,turn:0};
+  S.scene="battle"; clearPressed();
+  bmsg("A wild "+f.name+" appeared! "+f.intro);
+}
+function bmsg(t,then){ const b=S.battle; b.text=t; b.ch=0; b.tdone=false; b.then=then||null; b.phase="msg"; }
+
+function dmgCalc(mv,me,b){
+  const M=MOVES[mv]; let d=M.pow;
+  const weakHit=(me.type===b.f.weak);
+  if(M.kind==="test") d=M.pow+b.ev*5;
+  if(M.kind==="attest") d=(b.ev>=3)?M.pow+8:Math.max(2,Math.round(M.pow/3));
+  if(M.kind==="document") d=M.pow;
+  if(M.kind==="evidence") d=M.pow;
+  d=Math.round(d*(1+(me.lvl-1)*0.15));
+  if(weakHit&&(M.kind==="test"||M.kind==="remediate"||M.kind==="attest")) d=Math.round(d*2);
+  return {d,weakHit};
+}
+
+function doMove(mv){
+  const b=S.battle, me=b.me, M=MOVES[mv];
+  if(M.kind==="remediate"&&S.budget<M.cost){
+    bmsg("Not enough budget. Remediation costs "+M.cost+".",()=>b.phase="menu"); return;
+  }
+  let lines=[];
+  if(M.kind==="remediate") S.budget-=M.cost;
+  if(M.kind==="evidence"){ b.ev++; }
+  const {d,weakHit}=dmgCalc(mv,me,b);
+  b.hp=Math.max(0,b.hp-d);
+  b.flash=8;
+  if(M.kind==="evidence") lines.push(me.name+" collected evidence. Evidence on hand: "+b.ev);
+  else if(M.kind==="test") lines.push(me.name+" tested the control. "+(b.ev===0?"No evidence. Weak result.":"Evidence backed it up."));
+  else if(M.kind==="attest") lines.push(b.ev>=3?me.name+" attested. It held.":me.name+" attested with thin evidence. It did not hold.");
+  else if(M.kind==="remediate") lines.push(me.name+" remediated the gap. Budget left: "+S.budget);
+  else if(M.kind==="document"){ b.atk=Math.max(3,b.atk-2); lines.push(me.name+" wrote policy. "+b.f.name+" hits softer now."); }
+  if(weakHit&&M.kind!=="evidence"&&M.kind!=="document") lines.push("The right control for the job.");
+
+  bmsg(lines.join(" "),()=>{
+    if(b.hp<=0){ winBattle(); return; }
+    enemyTurn();
+  });
+}
+function enemyTurn(){
+  const b=S.battle, me=b.me;
+  const d=Math.max(1,Math.round(b.atk*(0.8+Math.random()*0.5)));
+  me.hp=Math.max(0,me.hp-d);
+  b.shake=10;
+  bmsg(b.f.name+" exploits the gap! "+me.name+" took "+d+" damage.",()=>{
+    if(me.hp<=0){
+      const rest=alive();
+      if(rest.length){ b.me=rest[0]; bmsg(me.name+" is overwhelmed. "+rest[0].name+" steps up!",()=>b.phase="menu"); }
+      else loseBattle();
+    } else b.phase="menu";
+  });
+}
+function winBattle(){
+  const b=S.battle;
+  b.me.xp+=10; 
+  let lvlup=false;
+  if(b.me.xp>=20*b.me.lvl){ b.me.lvl++; b.me.max+=6; b.me.hp=b.me.max; b.me.atk+=2; lvlup=true; }
+  const entry=logFinding(b.fid,b.ev,"MITIGATED");
+  S.budget=Math.min(12,S.budget+2);
+  const msg=[
+    b.f.name+" was logged. RISK "+entry.id+" opened.",
+    "Inherent "+entry.inherent+" ("+rating(entry.inherent)+") Residual "+entry.residual+" ("+rating(entry.residual)+") Evidence items: "+b.ev,
+    (b.ev===0?"You logged it with zero evidence. An auditor will\nreopen this.":"Evidence filed under CIS "+b.f.cis+"."),
+    (lvlup?b.me.name+" reached maturity "+b.me.lvl+"!":"Budget +2.")
+  ];
+  b.phase="msg"; b.queue=msg.slice(1); bmsg(msg[0],()=>nextWinMsg());
+}
+function nextWinMsg(){
+  const b=S.battle;
+  if(b.queue&&b.queue.length){ bmsg(b.queue.shift(),()=>nextWinMsg()); return; }
+  S.battle=null; S.scene="world"; save();
+  if(S.cleared.SHAREDPASS&&S.cleared.NOLOGS&&S.cleared.STALEACCT&&!S.flags.mid){
+    S.flags.mid=true;
+    say([["MARGIT","Three logged. Queue's down to twelve."],["MARGIT","Now go kill the thing making the tickets. Terminal, desk\nfloor."]]);
+  }
+}
+function loseBattle(){
+  const b=S.battle;
+  bmsg("The finding stands. You withdraw to write it up.",()=>{
+    S.party.forEach(p=>p.hp=Math.max(1,Math.round(p.max*0.5)));
+    S.battle=null; S.scene="world"; S.day++;
+    say([["","You take the loss and go home. The finding is still open."],
+         ["","Tip: COLLECT evidence before you TEST. Damage scales with\nwhat you can prove."]]);
+  });
+}
+
+function bar(x,y,w,cur,max){
+  const r=Math.max(0,cur/max), fill=Math.max(0,Math.round(r*(w-2)));
+  frame(x,y,w,6,0); rect(x+1,y+1,w-2,4,3);
+  rect(x+1,y+1,fill,4,r<0.3?1:0);
+  if(r<0.3&&(S.tick>>3)%2===0) rect(x+1,y+1,fill,4,2);
+}
+const TSHORT={ACCESS:"ACC",DETECT:"DET",HARDEN:"HRD",RECOVER:"RCV",GOVERN:"GOV"};
+function drawBattle(){
+  const b=S.battle;
+  clear(3);
+  for(let i=0;i<26;i++) px(112+i,44,1);
+  for(let i=0;i<34;i++) px(12+i,88,1);
+  const fl=(b.flash>0&&(S.tick>>1)%2===0);
+  const sh=(b.shake>0)?((S.tick%2)?2:-2):0;
+  if(!fl) drawMon(b.fid,112,12,2);
+  drawMon(b.me.id,14+sh,56,2);
+
+  drawBox(2,6,92,30);
+  text(b.f.name,7,10,0);
+  text("CIS "+b.f.cis,7,19,1);
+  if(b.ev>0) text("WK:"+TSHORT[b.f.weak],52,19,0);
+  bar(7,27,80,b.hp,b.max);
+
+  drawBox(66,58,92,34);
+  text(b.me.name,71,62,0);
+  text("M"+b.me.lvl,140,62,1);
+  bar(71,72,76,b.me.hp,b.me.max);
+  text(b.me.hp+"/"+b.me.max,71,82,1);
+  text("EV"+b.ev,110,82,0);
+  text("B"+S.budget,136,82,0);
+
+  if(b.phase==="menu"){
+    drawBox(0,92,160,52);
+    for(let i=0;i<4;i++){
+      const mv=b.me.moves[i]; if(!mv)continue;
+      const x=(i%2)?86:10, y=(i<2)?99:111;
+      if(i===b.menu) text(">",x-6,y,0);
+      text(MOVES[mv].name,x,y,0);
+    }
+    rect(6,118,148,1,1);
+    const mv=b.me.moves[b.menu];
+    if(mv) wrap(MOVES[mv].blurb,25).slice(0,2).forEach((ln,i)=>text(ln,6,122+i*9,1));
+  } else {
+    drawBox(0,92,160,52);
+    const lines=wrap(b.text,23).slice(0,3);
+    let shown=b.ch,y=100;
+    for(const ln of lines){ text(ln.substring(0,Math.max(0,shown)),8,y,0); shown-=ln.length; y+=12; if(shown<=0)break; }
+    if(b.tdone&&(S.tick>>4)%2===0) text("\u2665",148,131,1);
+  }
+  if(b.shake>0)b.shake--;
+  if(b.flash>0)b.flash--;
+}
+function updBattle(){
+  const b=S.battle;
+  if(b.phase==="msg"){
+    const total=wrap(b.text,23).slice(0,3).join("").length;
+    if(!b.tdone){ b.ch+=keys.ok?3:1; if(b.ch>=total){b.ch=total;b.tdone=true;} }
+    else if(hit("ok")||hit("back")){ const t=b.then; b.then=null; if(t)t(); else b.phase="menu"; }
+    return;
+  }
+  if(b.phase==="intro"){ b.phase="menu"; return; }
+  if(hit("up"))b.menu=(b.menu+3)%4;
+  if(hit("down"))b.menu=(b.menu+1)%4;
+  if(hit("left"))b.menu=(b.menu+3)%4;
+  if(hit("right"))b.menu=(b.menu+1)%4;
+  if(b.menu>=b.me.moves.length)b.menu=0;
+  if(hit("ok")) doMove(b.me.moves[b.menu]);
+}
+
+/* ══ MENUS ══════════════════════════════════════════════════════════ */
+const MENU=["REGISTER","CONTROLS","EVIDENCE","EXPORT","STATUS","SAVE","CLOSE"];
+function updMenu(){
+  if(hit("back")||hit("menu")){ S.scene="world"; return; }
+  if(hit("up"))S.menuIdx=(S.menuIdx+MENU.length-1)%MENU.length;
+  if(hit("down"))S.menuIdx=(S.menuIdx+1)%MENU.length;
+  if(hit("ok")){
+    const m=MENU[S.menuIdx];
+    if(m==="CLOSE"){S.scene="world";}
+    else if(m==="SAVE"){ save(); say([["","Progress saved."]]); }
+    else if(m==="EXPORT"){ doExport(); }
+    else if(m==="REGISTER"){ S.scene="register"; S.subIdx=0; S.scroll=0; }
+    else if(m==="CONTROLS"){ S.scene="controls"; S.subIdx=0; }
+    else if(m==="EVIDENCE"){ S.scene="evidence"; S.scroll=0; }
+    else if(m==="STATUS"){ S.scene="status"; }
+  }
+}
+function drawMenu(){
+  drawWorld();
+  const w=76,x=W-w-4;
+  drawBox(x,4,w,MENU.length*11+10);
+  MENU.forEach((m,i)=>{
+    const y=10+i*11;
+    if(i===S.menuIdx) text(">",x+4,y,0);
+    text(m,x+12,y,0);
+  });
+}
+
+function drawList(title,rows,idx,scroll,perPage){
+  clear(3);
+  rect(0,0,W,12,0); text(title,4,3,3); text("X:back",118,3,2);
+  if(!rows.length){ text("Nothing here yet.",8,30,1); text("X to go back",8,44,1); return; }
+  const start=scroll, end=Math.min(rows.length,start+perPage);
+  for(let i=start;i<end;i++){
+    const y=18+(i-start)*13;
+    if(i===idx){ rect(2,y-2,156,12,2); text(">",4,y,0); }
+    text(rows[i],11,y,0);
+  }
+  rect(0,128,W,16,0);
+  text((idx+1)+" of "+rows.length+"   Z: detail",4,133,3);
+}
+
+function updRegister(){
+  if(hit("back")){ S.scene="menu"; return; }
+  if(!S.register.length) return;
+  if(hit("up")&&S.subIdx>0)S.subIdx--;
+  if(hit("down")&&S.subIdx<S.register.length-1)S.subIdx++;
+  const per=8;
+  if(S.subIdx<S.scroll)S.scroll=S.subIdx;
+  if(S.subIdx>=S.scroll+per)S.scroll=S.subIdx-per+1;
+  if(hit("ok")&&S.register.length) S.scene="regdetail";
+}
+function drawRegister(){
+  const rows=S.register.map(r=>r.id+" "+r.finding.substring(0,11).padEnd(11," ")+rating(r.residual).substring(0,4));
+  drawList("RISK REGISTER",rows,S.subIdx,S.scroll,8);
+}
+function updRegDetail(){ if(hit("back")||hit("ok")) S.scene="register"; }
+function drawRegDetail(){
+  const r=S.register[S.subIdx]; clear(3);
+  rect(0,0,W,12,0); text(r.id+"  "+r.finding,4,3,3); text("X:back",118,3,2);
+  let y=17;
+  const L=(k,v)=>{ text(k,4,y,1); text(v,72,y,0); y+=11; };
+  L("CIS v8",r.cis);
+  L("NIST CSF",r.csf);
+  L("Likelihood",r.lik+" / 5");
+  L("Impact",r.imp+" / 5");
+  L("Inherent",r.inherent+" "+rating(r.inherent));
+  L("Residual",r.residual+" "+rating(r.residual));
+  L("Treatment",r.treatment);
+  L("Owner",r.owner);
+  L("Due",r.due);
+  rect(0,126,W,18,0);
+  text("Evidence on file: "+r.evCount,4,131,3);
+}
+function updControls(){
+  if(hit("back")){ S.scene="menu"; return; }
+  if(!S.party.length) return;
+  if(hit("up")&&S.subIdx>0)S.subIdx--;
+  if(hit("down")&&S.subIdx<S.party.length-1)S.subIdx++;
+}
+function drawControls(){
+  clear(3); rect(0,0,W,12,0); text("YOUR CONTROLS",4,3,3); text("X:back",118,3,2);
+  if(!S.party.length){ text("Empty. Talk to DEV.",8,30,1); text("X: back",8,44,1); return; }
+  S.party.forEach((p,i)=>{
+    const y=15+i*22;
+    if(i===S.subIdx){ text(">",2,y+3,0); }
+    text(p.name,9,y,0);
+    text(p.type,9,y+9,1);
+    bar(92,y+1,60,p.hp,p.max);
+    text(p.hp+"/"+p.max,92,y+10,1);
+    text("M"+p.lvl,134,y+10,0);
+  });
+  const p=S.party[S.subIdx];
+  rect(0,126,W,18,0);
+  text("CIS "+CONTROLS[p.id].cis.join(" ")+"   "+CONTROLS[p.id].csf,4,131,3);
+}
+function updEvidence(){
+  if(hit("back")){ S.scene="menu"; return; }
+  if(hit("up")&&S.scroll>0)S.scroll--;
+  if(hit("down")&&S.scroll<Math.max(0,S.evidence.length-7))S.scroll++;
+}
+function drawEvidence(){
+  clear(3); rect(0,0,W,12,0); text("EVIDENCE BAG",4,3,3); text("X:back",118,3,2);
+  if(!S.evidence.length){ text("No artifacts yet.",8,30,1); text("X: back",8,44,1); return; }
+  for(let i=S.scroll;i<Math.min(S.evidence.length,S.scroll+4);i++){
+    const e=S.evidence[i], y=15+(i-S.scroll)*27;
+    wrap(e.name,24).slice(0,2).forEach((ln,k)=>text(ln,6,y+k*9,0));
+    text("CIS "+e.ctrl+"   "+e.date,6,y+18,1);
+  }
+  rect(0,126,W,18,0);
+  text("Ages out after 90 days.",4,131,3);
+}
+function updStatus(){ if(hit("back")||hit("ok")) S.scene="menu"; }
+function drawStatus(){
+  clear(3); rect(0,0,W,12,0); text("STATUS",4,3,3); text("X:back",118,3,2);
+  const a=ACTS[S.act-1];
+  let y=18;
+  const L=(k,v)=>{ text(k,4,y,1); text(v,64,y,0); y+=12; };
+  L("Act",a.n+" "+a.name);
+  L("Where",a.sub);
+  text("Goal",4,y,1);
+  wrap(a.goal,15).slice(0,2).forEach((ln,i)=>text(ln,64,y+i*10,0));
+  y+=26;
+  L("Findings",String(S.register.length));
+  L("Evidence",String(S.evidence.length));
+  L("Budget",String(S.budget));
+  rect(0,126,W,18,0); text("Day "+S.day,4,131,3);
+}
+/* ══ EXPORT — the part that makes this a portfolio piece ════════════ */
+function csvEsc(s){ s=String(s); return /[", ]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
+function buildCSV(){
+  const NL=String.fromCharCode(13)+String.fromCharCode(10);
+  const head=["Risk ID","Finding","CIS v8 Safeguard","NIST CSF 2.0 Function","Likelihood (1-5)",
+    "Impact (1-5)","Inherent Score","Inherent Rating","Residual Score","Residual Rating",
+    "Treatment","Owner","Date Opened","Due Date","Status","Evidence Required","Evidence Count"];
+  const rows=S.register.map(r=>[r.id,r.finding,r.cis,r.csf,r.lik,r.imp,r.inherent,
+    rating(r.inherent),r.residual,rating(r.residual),r.treatment,r.owner,r.opened,r.due,
+    r.status,r.evidence,r.evCount]);
+  return [head,...rows].map(r=>r.map(csvEsc).join(",")).join(NL);
+}
+function buildPOAM(){
+  const N=String.fromCharCode(10), NN=N+N, BR="  "+N;
+  const d=new Date().toISOString().slice(0,10);
+  const L=[];
+  L.push("# Plan of Action and Milestones (POA&M)"+N);
+  L.push("**System:** Sublevel 2 Helpdesk Environment"+BR);
+  L.push("**Framework:** CIS Controls v8 (IG1) mapped to NIST CSF 2.0"+BR);
+  L.push("**Assessment date:** "+d+BR);
+  L.push("**Prepared by:** GRC Analyst (self-assessment)"+NN);
+  L.push("> Generated from CONTROL QUEST game state. Safeguard numbering must be"+N);
+  L.push("> verified against the published CIS Controls v8 document before use."+NN);
+  L.push("## Summary"+NN);
+  const crit=S.register.filter(r=>rating(r.residual)==="CRITICAL").length;
+  const high=S.register.filter(r=>rating(r.residual)==="HIGH").length;
+  const noEv=S.register.filter(r=>r.evCount===0).length;
+  L.push("- Findings identified: **"+S.register.length+"**"+N);
+  L.push("- Residual CRITICAL: **"+crit+"** / Residual HIGH: **"+high+"**"+N);
+  L.push("- Evidence artifacts on file: **"+S.evidence.length+"**"+N);
+  L.push("- Findings logged without evidence: **"+noEv+"**"+NN);
+  L.push("## Register"+NN);
+  L.push("| ID | Finding | CIS | CSF | Inherent | Residual | Due |"+N);
+  L.push("|---|---|---|---|---|---|---|"+N);
+  S.register.forEach(r=>{
+    L.push("| "+r.id+" | "+r.finding+" | "+r.cis+" | "+r.csf+" | "+r.inherent+" "+rating(r.inherent)+" | "+r.residual+" "+rating(r.residual)+" | "+r.due+" |"+N);
+  });
+  L.push(N+"## Open items"+NN);
+  S.register.forEach(r=>{
+    L.push("### "+r.id+" - "+r.finding+NN);
+    L.push("| Field | Value |"+N+"|---|---|"+N);
+    L.push("| CIS v8 safeguard | "+r.cis+" |"+N);
+    L.push("| NIST CSF 2.0 function | "+r.csf+" |"+N);
+    L.push("| Likelihood / Impact | "+r.lik+" / "+r.imp+" |"+N);
+    L.push("| Inherent risk | "+r.inherent+" ("+rating(r.inherent)+") |"+N);
+    L.push("| Residual risk | "+r.residual+" ("+rating(r.residual)+") |"+N);
+    L.push("| Treatment | "+r.treatment+" |"+N);
+    L.push("| Owner | "+r.owner+" |"+N);
+    L.push("| Opened | "+r.opened+" |"+N);
+    L.push("| Due | "+r.due+" |"+N);
+    L.push("| Status | "+r.status+" |"+NN);
+    L.push("**Remediation plan.** "+r.fix+NN);
+    L.push("**Evidence required.** "+r.evidence+NN);
+    if(r.evCount===0) L.push("> Logged without supporting evidence. Treat as unverified."+NN);
+  });
+  return L.join("");
+}
+function download(name,text){
+  try{
+    const b=new Blob([text],{type:"text/plain;charset=utf-8"});
+    const u=URL.createObjectURL(b);
+    const a=document.createElement("a"); a.href=u; a.download=name;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},2000);
+    return true;
+  }catch(e){ return false; }
+}
+function doExport(){
+  if(!S.register.length){ say([["","Nothing to export yet. Log a finding first."]]); return; }
+  const ok1=download("risk-register.csv",buildCSV());
+  const ok2=download("poam.md",buildPOAM());
+  S.scene="world";
+  if(ok1&&ok2) say([["EXPORT","risk-register.csv poam.md"],
+    ["EXPORT","Two real artifacts, built from what you actually proved.\nThat is the deliverable."]]);
+  else say([["EXPORT","Download blocked here. Open the file outside the\nsandbox to export."]]);
+}
+
+/* ══ TITLE ══════════════════════════════════════════════════════════ */
+function drawTitle(){
+  clear(3);
+  rect(0,0,W,54,2);
+  for(let i=0;i<W;i+=8) px(i,54,1);
+  drawMon("MULTIFACTOR",12,12,2);
+  drawMon("STALEACCT",116,12,2);
+  ctext("CONTROL",60,0);
+  ctext("QUEST",70,0);
+  rect(30,80,100,1,1);
+  ctext("COMPLIANCE VERSION",86,1);
+  if((S.tick>>4)%2===0) ctext("PRESS Z TO START",106,0);
+  ctext("Act 1: The Helpdesk",122,1);
+  ctext("An RPG about evidence",132,1);
+}
+function updTitle(){
+  if(hit("ok")){
+    S.scene="world";
+    say([["","SUBLEVEL 2. 08:41."],
+         ["","Fifty open tickets. One of them is the reason for the\nother forty-nine."],
+         ["","Talk to DEV to pick up your first CONTROL. Walk into the\nblinking tiles to find\nFINDINGS."]]);
+  }
+}
+
+/* ══ LOOP ═══════════════════════════════════════════════════════════ */
+function update(){
+  S.tick++;
+  switch(S.scene){
+    case "title": updTitle(); break;
+    case "world": updWorld(); break;
+    case "dialog": updMsg(); break;
+    case "menu": updMenu(); break;
+    case "battle": updBattle(); break;
+    case "register": updRegister(); break;
+    case "regdetail": updRegDetail(); break;
+    case "controls": updControls(); break;
+    case "evidence": updEvidence(); break;
+    case "status": updStatus(); break;
+  }
+  clearPressed();
+}
+function draw(){
+  switch(S.scene){
+    case "title": drawTitle(); break;
+    case "world": drawWorld(); break;
+    case "dialog": drawWorld(); drawMsg(); break;
+    case "menu": drawMenu(); break;
+    case "battle": drawBattle(); break;
+    case "register": drawRegister(); break;
+    case "regdetail": drawRegDetail(); break;
+    case "controls": drawControls(); break;
+    case "evidence": drawEvidence(); break;
+    case "status": drawStatus(); break;
+  }
+  flush();
+}
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+
+/* fit canvas to viewport at integer scale */
+function fit(){
+  const maxW=Math.min(window.innerWidth-56,720);
+  const maxH=window.innerHeight-120;
+  let s=Math.max(1,Math.floor(Math.min(maxW/W,maxH/H)));
+  cvs.style.width=(W*s)+"px"; cvs.style.height=(H*s)+"px";
+}
+addEventListener("resize",fit); fit();
+
+(async()=>{ await load(); if(S.party.length) S.scene="world"; loop(); })();
+</script>
+</body>
+</html>
