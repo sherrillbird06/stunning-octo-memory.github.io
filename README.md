@@ -1,7 +1,7 @@
 # CONTROL QUEST — Compliance Version
 
 A GRC training RPG in the shape of a 1996 handheld, plus the evidence collector it teaches you to write.
-
+**[▶ Play it in your browser](https://stunning-octo-memory.github.io/)**
 You start on Sublevel 2 with fifty open tickets and no privileges. You collect **CONTROLS**, battle **FINDINGS**, and the loot you carry away is **evidence**. Beat the act and the game hands you a real risk register and a real POA&M as downloadable files.
 
 ---
