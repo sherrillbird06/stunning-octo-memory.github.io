@@ -1,0 +1,1961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>CONTROL QUEST — Compliance Version</title>
+<style>
+  :root{
+    --ink:#e8ecf4; --dim:#7b8494; --edge:#1b1f27;
+    --bg0:#05070b; --bg1:#0c1119; --accent:#f0b429;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--bg0)}
+  body{
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    color:var(--ink);
+    display:flex;align-items:center;justify-content:center;
+    touch-action:none; -webkit-user-select:none; user-select:none;
+  }
+  #stage{
+    position:fixed; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 45%, #131a26 0%, #080b11 60%, #04060a 100%);
+  }
+  #wrap{ position:relative; line-height:0; }
+  canvas#screen{
+    display:block; image-rendering:pixelated;
+    box-shadow:0 0 60px rgba(90,140,220,.10), 0 0 140px rgba(40,70,130,.14),
+               0 18px 60px rgba(0,0,0,.7);
+    border-radius:3px;
+  }
+  /* CRT scanlines + phosphor bloom, toggleable */
+  #crt{
+    position:absolute; inset:0; pointer-events:none; border-radius:3px;
+    background:repeating-linear-gradient(to bottom,
+      rgba(0,0,0,.22) 0px, rgba(0,0,0,.22) 1px,
+      rgba(255,255,255,.015) 1px, rgba(255,255,255,.015) 3px);
+    mix-blend-mode:multiply; opacity:1; transition:opacity .2s;
+  }
+  #crt.off{opacity:0}
+  #vig{
+    position:absolute; inset:0; pointer-events:none; border-radius:3px;
+    background:radial-gradient(ellipse 92% 88% at 50% 50%,
+      rgba(0,0,0,0) 55%, rgba(0,0,0,.34) 100%);
+  }
+  /* top-right utility bar */
+  #bar{
+    position:fixed; top:10px; right:12px; display:flex; gap:6px; z-index:20;
+  }
+  #bar button{
+    font:inherit; font-size:10px; letter-spacing:.1em; color:var(--dim);
+    background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.09);
+    border-radius:5px; padding:6px 9px; cursor:pointer; transition:.15s;
+  }
+  #bar button:hover,#bar button:focus-visible{ color:var(--ink); border-color:rgba(255,255,255,.25); }
+  #bar button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  #keys{
+    position:fixed; bottom:9px; left:0; right:0; text-align:center;
+    font-size:9.5px; letter-spacing:.12em; color:#5a6270; z-index:20;
+  }
+  #keys b{color:#8f98a8;font-weight:400}
+  /* touch controls, shown only on coarse pointers */
+  #touch{ display:none; position:fixed; inset:0; z-index:15; pointer-events:none; }
+  #touch .pad,#touch .btns{ position:absolute; bottom:22px; pointer-events:auto; }
+  #touch .pad{ left:18px; width:132px; height:132px; }
+  #touch .btns{ right:18px; display:flex; gap:12px; align-items:flex-end; }
+  #touch i{
+    position:absolute; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.14);
+    color:#aeb6c4; font-style:normal; font-size:15px; border-radius:9px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #touch i:active{ background:rgba(240,180,41,.28); }
+  #touch .pad i{ width:44px; height:44px; }
+  #touch .u{left:44px;top:0} #touch .d{left:44px;top:88px}
+  #touch .l{left:0;top:44px} #touch .r{left:88px;top:44px}
+  #touch .btns i{ position:relative; width:54px; height:54px; border-radius:50%; font-size:13px; letter-spacing:.05em; }
+  #touch .mn{ width:44px;height:30px;border-radius:8px;font-size:9px; }
+  @media (pointer:coarse){ #touch{display:block} #keys{display:none} }
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="wrap">
+    <canvas id="screen" width="160" height="144"></canvas>
+    <div id="crt"></div><div id="vig"></div>
+  </div>
+</div>
+<div id="bar">
+  <button id="btnSnd" title="Toggle sound">SOUND OFF</button>
+  <button id="btnCrt" title="Toggle scanlines">SCANLINES</button>
+  <button id="btnFs" title="Fullscreen">FULLSCREEN</button>
+</div>
+<div id="keys"><b>WASD/ARROWS</b> move &nbsp;·&nbsp; <b>Z</b> confirm &nbsp;·&nbsp; <b>X</b> back &nbsp;·&nbsp; <b>ENTER</b> menu &nbsp;·&nbsp; <b>M</b> map &nbsp;·&nbsp; <b>F</b> fullscreen</div>
+<div id="touch">
+  <div class="pad"><i class="u" data-k="up">▲</i><i class="d" data-k="down">▼</i><i class="l" data-k="left">◀</i><i class="r" data-k="right">▶</i></div>
+  <div class="btns"><i class="mn" data-k="map">MAP</i><i class="mn" data-k="menu">MENU</i><i data-k="back">B</i><i data-k="ok">A</i></div>
+</div>
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════
+   CONTROL QUEST — a GRC training RPG in the shape of a 1996 handheld.
+   Original characters and world. Style homage only.
+   ══════════════════════════════════════════════════════════════════ */
+
+const W=160,H=144,TS=16;
+const cvs=document.getElementById("screen"), ctx=cvs.getContext("2d");
+ctx.imageSmoothingEnabled=false;
+
+/* ══ PALETTE BANKS ═══════════════════════════════════════════════════
+   Art is drawn with 4 indices (0 darkest .. 3 lightest), exactly like
+   the DMG. Each draw call selects a bank, which maps those 4 indices to
+   real colours. This is how the Game Boy Color did it, and it means the
+   whole tile and sprite library gets colour with no repainting.
+   ═══════════════════════════════════════════════════════════════════ */
+const BANK={};
+let _pi=0;
+function bank(name,c0,c1,c2,c3){ BANK[name]=_pi++; PALS.push([c0,c1,c2,c3]); return BANK[name]; }
+const PALS=[];
+
+/* environment */
+bank("floor",  "#1b2436","#2c3a56","#46597e","#5d7299");
+bank("carpet", "#2a1f3a","#3d2f52","#54426e","#6b558a");
+bank("wall",   "#151b28","#232c3f","#33405a","#46567a");
+bank("desk",   "#241a12","#3d2a1a","#6b4a2c","#9c7043");
+bank("metal",  "#12171f","#232b38","#3c4757","#5a6779");
+bank("plant",  "#0f2416","#1a4227","#2c6b3c","#46a05a");
+bank("screen", "#04140c","#0a3d22","#18a35a","#4ff08c");
+bank("door",   "#1a1208","#3a2a10","#6b4f1c","#a8802e");
+bank("paper",  "#2a241a","#5c5140","#a89878","#e8dcc0");
+/* characters */
+bank("hero",   "#1a1020","#8c2f3a","#e0644f","#f4d9b0");
+bank("npcA",   "#141c26","#2f5c7a","#4f9ec4","#cfe8f4");
+bank("npcB",   "#1c1424","#5c3a72","#9c6ab8","#e4d0f0");
+bank("npcC",   "#0f1a14","#2a5c42","#4aa070","#d0f0dc");
+/* control types */
+bank("ACCESS", "#2a1c04","#7a5410","#d99b1e","#ffe08a");
+bank("DETECT", "#04202a","#0f5c72","#26a8c4","#96eaf8");
+bank("HARDEN", "#101a2c","#2a4472","#4f7cc0","#b4d2f8");
+bank("RECOVER","#0a2416","#1c5c38","#34a866","#a4f0c0");
+bank("GOVERN", "#1e1030","#472a72","#7a54b8","#cfb0f8");
+/* findings: hostile reds and sickly greens */
+bank("threat", "#2a0810","#7a1424","#c43048","#f88098");
+bank("rot",    "#141c08","#3a4a12","#6e8c22","#b8d454");
+bank("void",   "#0e1018","#2e3050","#5c6090","#a8b0e0");
+bank("boss",   "#2a0604","#8a1408","#d84418","#ffa050");
+/* UI */
+bank("ui",     "#10151f","#33405a","#c8d4e6","#f2f6fc");
+bank("uiwarn", "#2a1004","#7a3008","#e08830","#ffe0b0");
+bank("uibad",  "#2a0610","#7a1030","#d43860","#ffb0c8");
+bank("uigood", "#04220f","#0f6030","#2eae5e","#a8f0c0");
+bank("title",  "#0a0812","#2a1c48","#6a4ab0","#f0e0ff");
+bank("sky",    "#0a1020","#1c2c50","#38508c","#6a86c8");
+
+let curPal=BANK.ui;
+function usePal(p){ curPal=(typeof p==="string")?BANK[p]:p; }
+
+const img=ctx.createImageData(W,H);
+const buf=new Uint8Array(W*H);   // (palette<<2)|colorIndex
+
+function clear(c,p){ buf.fill((((p===undefined?curPal:(typeof p==="string"?BANK[p]:p)))<<2)|c); }
+function px(x,y,c){ x|=0; y|=0; if(x<0||y<0||x>=W||y>=H)return; buf[y*W+x]=(curPal<<2)|c; }
+function rect(x,y,w,h,c){ for(let j=0;j<h;j++)for(let i=0;i<w;i++)px(x+i,y+j,c); }
+function frame(x,y,w,h,c){ rect(x,y,w,1,c);rect(x,y+h-1,w,1,c);rect(x,y,1,h,c);rect(x+w-1,y,1,h,c); }
+
+const RGB=[];
+function bakePalettes(){
+  RGB.length=0;
+  for(const p of PALS){
+    const row=[];
+    for(const hex of p) row.push([parseInt(hex.substr(1,2),16),
+                                  parseInt(hex.substr(3,2),16),
+                                  parseInt(hex.substr(5,2),16)]);
+    RGB.push(row);
+  }
+}
+function flush(){
+  if(!RGB.length) bakePalettes();
+  const d=img.data;
+  for(let i=0;i<buf.length;i++){
+    const b=buf[i], c=RGB[b>>2][b&3], o=i*4;
+    d[o]=c[0]; d[o+1]=c[1]; d[o+2]=c[2]; d[o+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+}
+
+/* ── Bitmap font: 5x7 glyphs in an 8x8 cell ─────────────────────── */
+const F={};
+function G(ch,rows){ F[ch]=rows; }
+G(" ",["     ","     ","     ","     ","     ","     ","     "]);
+G("A",[" ### ","#   #","#   #","#####","#   #","#   #","#   #"]);
+G("B",["#### ","#   #","#### ","#   #","#   #","#   #","#### "]);
+G("C",[" ### ","#   #","#    ","#    ","#    ","#   #"," ### "]);
+G("D",["#### ","#   #","#   #","#   #","#   #","#   #","#### "]);
+G("E",["#####","#    ","#### ","#    ","#    ","#    ","#####"]);
+G("F",["#####","#    ","#### ","#    ","#    ","#    ","#    "]);
+G("G",[" ### ","#   #","#    ","#  ##","#   #","#   #"," ### "]);
+G("H",["#   #","#   #","#####","#   #","#   #","#   #","#   #"]);
+G("I",[" ### ","  #  ","  #  ","  #  ","  #  ","  #  "," ### "]);
+G("J",["    #","    #","    #","    #","#   #","#   #"," ### "]);
+G("K",["#   #","#  # ","# #  ","##   ","# #  ","#  # ","#   #"]);
+G("L",["#    ","#    ","#    ","#    ","#    ","#    ","#####"]);
+G("M",["#   #","## ##","# # #","#   #","#   #","#   #","#   #"]);
+G("N",["#   #","##  #","# # #","#  ##","#   #","#   #","#   #"]);
+G("O",[" ### ","#   #","#   #","#   #","#   #","#   #"," ### "]);
+G("P",["#### ","#   #","#   #","#### ","#    ","#    ","#    "]);
+G("Q",[" ### ","#   #","#   #","#   #","# # #","#  # "," ## #"]);
+G("R",["#### ","#   #","#   #","#### ","# #  ","#  # ","#   #"]);
+G("S",[" ####","#    ","#    "," ### ","    #","    #","#### "]);
+G("T",["#####","  #  ","  #  ","  #  ","  #  ","  #  ","  #  "]);
+G("U",["#   #","#   #","#   #","#   #","#   #","#   #"," ### "]);
+G("V",["#   #","#   #","#   #","#   #","#   #"," # # ","  #  "]);
+G("W",["#   #","#   #","#   #","# # #","# # #","## ##","#   #"]);
+G("X",["#   #","#   #"," # # ","  #  "," # # ","#   #","#   #"]);
+G("Y",["#   #","#   #"," # # ","  #  ","  #  ","  #  ","  #  "]);
+G("Z",["#####","    #","   # ","  #  "," #   ","#    ","#####"]);
+G("a",["     ","     "," ### ","    #"," ####","#   #"," ####"]);
+G("b",["#    ","#    ","#### ","#   #","#   #","#   #","#### "]);
+G("c",["     ","     "," ####","#    ","#    ","#    "," ####"]);
+G("d",["    #","    #"," ####","#   #","#   #","#   #"," ####"]);
+G("e",["     ","     "," ### ","#   #","#####","#    "," ####"]);
+G("f",["  ## "," #   "," #   ","#### "," #   "," #   "," #   "]);
+G("g",["     "," ####","#   #","#   #"," ####","    #"," ### "]);
+G("h",["#    ","#    ","#### ","#   #","#   #","#   #","#   #"]);
+G("i",["  #  ","     "," ##  ","  #  ","  #  ","  #  "," ### "]);
+G("j",["   # ","     ","  ## ","   # ","   # ","#  # "," ##  "]);
+G("k",["#    ","#    ","#  # ","# #  ","##   ","# #  ","#  # "]);
+G("l",[" ##  ","  #  ","  #  ","  #  ","  #  ","  #  "," ### "]);
+G("m",["     ","     ","## # ","# # #","# # #","# # #","# # #"]);
+G("n",["     ","     ","#### ","#   #","#   #","#   #","#   #"]);
+G("o",["     ","     "," ### ","#   #","#   #","#   #"," ### "]);
+G("p",["     ","#### ","#   #","#   #","#### ","#    ","#    "]);
+G("q",["     "," ####","#   #","#   #"," ####","    #","    #"]);
+G("r",["     ","     ","# ###","##   ","#    ","#    ","#    "]);
+G("s",["     ","     "," ####","#    "," ### ","    #","#### "]);
+G("t",[" #   "," #   ","#### "," #   "," #   "," #  #","  ## "]);
+G("u",["     ","     ","#   #","#   #","#   #","#  ##"," ## #"]);
+G("v",["     ","     ","#   #","#   #","#   #"," # # ","  #  "]);
+G("w",["     ","     ","#   #","# # #","# # #","# # #"," # # "]);
+G("x",["     ","     ","#   #"," # # ","  #  "," # # ","#   #"]);
+G("y",["     ","#   #","#   #","#   #"," ####","    #"," ### "]);
+G("z",["     ","     ","#####","   # ","  #  "," #   ","#####"]);
+G("0",[" ### ","#   #","#  ##","# # #","##  #","#   #"," ### "]);
+G("1",["  #  "," ##  ","  #  ","  #  ","  #  ","  #  "," ### "]);
+G("2",[" ### ","#   #","    #","   # ","  #  "," #   ","#####"]);
+G("3",["#####","   # ","  ## ","    #","    #","#   #"," ### "]);
+G("4",["   # ","  ## "," # # ","#  # ","#####","   # ","   # "]);
+G("5",["#####","#    ","#### ","    #","    #","#   #"," ### "]);
+G("6",["  ## "," #   ","#    ","#### ","#   #","#   #"," ### "]);
+G("7",["#####","    #","   # ","  #  "," #   "," #   "," #   "]);
+G("8",[" ### ","#   #","#   #"," ### ","#   #","#   #"," ### "]);
+G("9",[" ### ","#   #","#   #"," ####","    #","   # "," ##  "]);
+G(".",["     ","     ","     ","     ","     "," ##  "," ##  "]);
+G(",",["     ","     ","     ","     "," ##  "," ##  ","  #  "]);
+G("!",["  #  ","  #  ","  #  ","  #  ","  #  ","     ","  #  "]);
+G("?",[" ### ","#   #","    #","   # ","  #  ","     ","  #  "]);
+G("'",["  #  ","  #  ","     ","     ","     ","     ","     "]);
+G("-",["     ","     ","     ","#####","     ","     ","     "]);
+G(";",["     ","  #  ","  #  ","     ","  #  ","  #  "," #   "]);
+G(":",["     ","  #  ","  #  ","     ","  #  ","  #  ","     "]);
+G("/",["    #","    #","   # ","  #  "," #   ","#    ","#    "]);
+G("(",["   # ","  #  "," #   "," #   "," #   ","  #  ","   # "]);
+G(")",[" #   ","  #  ","   # ","   # ","   # ","  #  "," #   "]);
+G("&",[" ##  ","#  # "," ##  ","### #","#  ##","#  ##"," ## #"]);
+G("%",["#   #","#  # ","  #  "," #   ","#   #","    #","    #"]);
+G(">",[" #   ","  #  ","   # ","    #","   # ","  #  "," #   "]);
+G("*",["     "," # # ","  #  ","#####","  #  "," # # ","     "]);
+G("+",["     ","  #  ","  #  ","#####","  #  ","  #  ","     "]);
+G("=",["     ","     ","#####","     ","#####","     ","     "]);
+G("#",[" # # ","#####"," # # ","#####"," # # ","     ","     "]);
+G("_",["     ","     ","     ","     ","     ","     ","#####"]);
+G("[",["  ###","  #  ","  #  ","  #  ","  #  ","  #  ","  ###"]);
+G("]",["###  ","  #  ","  #  ","  #  ","  #  ","  #  ","###  "]);
+G("\u2665",["     "," # # ","#####","#####"," ### ","  #  ","     "]);
+
+function chw(ch){ return 6; }
+function text(s,x,y,c){
+  c=(c===undefined)?0:c;
+  let cx=x;
+  for(const ch of String(s)){
+    const g=F[ch]||F["?"];
+    for(let j=0;j<7;j++) for(let i=0;i<5;i++) if(g[j][i]==="#") px(cx+i,y+j,c);
+    cx+=6;
+  }
+  return cx;
+}
+function textw(s){ return String(s).length*6; }
+function wrap(s,maxCh){
+  const out=[];
+  for(const para of String(s).split("\n")){
+    let ln="";
+    for(const w of para.split(" ")){
+      if(ln && (ln+" "+w).length>maxCh){ out.push(ln); ln=w; }
+      else ln = ln?ln+" "+w:w;
+    }
+    out.push(ln);
+  }
+  return out;
+}
+function ctext(s,y,c,x0,w0){
+  x0=x0===undefined?0:x0; w0=w0===undefined?W:w0;
+  text(s, x0+Math.floor((w0-textw(s))/2), y, c);
+}
+
+/* ── Art: 16x16 tiles. ' '=3 light, '.'=2, ':'=1, '#'=0 dark, 't'=clear ── */
+const CMAP={" ":3,".":2,":":1,"#":0,"t":-1};
+function art(rows){ return rows.map(r=>[...r].map(c=>CMAP[c])); }
+
+const TILE={};
+TILE.floor=art([
+"                ","  .             ","                ","                ",
+"          .     ","                ","                ","    .           ",
+"                ","                ","                ","               .",
+"                ","      .         ","                ","                "]);
+TILE.carpet=art([
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  ..",
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  ..",
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  ..",
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  .."]);
+TILE.wall=art([
+"::::::::::::::::",": ...  :  ... . ",": .... :  .. .. ","::::::::::::::::",
+"  ..  :  ...  : ","  ... :  .... : ","::::::::::::::::",": ...  :  ..  . ",
+": .. . :  ... . ","::::::::::::::::","  ..  :  ..   : ","  . . :  .... : ",
+"::::::::::::::::",": ..  :  ..  ..#",":::::::::::::: :","################"]);
+TILE.desk=art([
+"tttttttttttttttt","tttttttttttttttt","################","#              #",
+"#  ##########  #","#  #        #  #","#  #  ....  #  #","#  #  ....  #  #",
+"#  ##########  #","#              #","################","#..##########..#",
+"#..#tttttttt#..#","#..#tttttttt#..#","####tttttttt####","tttttttttttttttt"]);
+TILE.rack=art([
+"################","#::::::::::::::#","#: ##  ##  ## :#","#:            :#",
+"#: ##  ##  ## :#","#:            :#","#: ##  ##  ## :#","#:            :#",
+"#: ##  ##  ## :#","#:            :#","#: ##  ##  ## :#","#:            :#",
+"#::::::::::::::#","################","#  ##########  #","tttttttttttttttt"]);
+TILE.door=art([
+"################","#..............#","#.############.#","#.#          #.#",
+"#.#          #.#","#.#   ....   #.#","#.#   ....   #.#","#.#          #.#",
+"#.#        # #.#","#.#        # #.#","#.#          #.#","#.############.#",
+"#..............#","#..............#","#..............#","################"]);
+TILE.plant=art([
+"tttttt ##  ttttt","tttt ##  ##  ttt","tt ##  ##  ##  t","t  ##  ##  ##  t",
+"tt   ##  ##   tt","tttt  ####  tttt","tttttt ##  ttttt","tttttt ##  ttttt",
+"ttttt ####  tttt","tttt#......#tttt","tttt#......#tttt","tttt#......#tttt",
+"ttttt#....#ttttt","ttttt#....#ttttt","ttttt######ttttt","tttttttttttttttt"]);
+TILE.cabinet=art([
+"################","#              #","# ############ #","# #..........# #",
+"# #....##....# #","# ############ #","#              #","# ############ #",
+"# #..........# #","# #....##....# #","# ############ #","#              #",
+"# ############ #","# #..........# #","################","tttttttttttttttt"]);
+TILE.boxes=art([
+"tttttttttttttttt","tttt##########tt","tttt#........#tt","tttt#..####..#tt",
+"tttt#........#tt","tt##########..#t","tt#........#..#t","tt#..####..#..#t",
+"tt#........#..#t","tt#........####t","tt#..####..#tttt","tt#........#tttt",
+"tt##########tttt","tttttttttttttttt","tttttttttttttttt","tttttttttttttttt"]);
+TILE.term=art([
+"tttttttttttttttt","tt############tt","tt#::::::::::#tt","tt#:  ::  :: :#t",
+"tt#: ::: :: ::#t","tt#:  :  ::  :#t","tt#: :::  :: :#t","tt#::::::::::#tt",
+"tt############tt","tttt##....##tttt","tttt##....##tttt","tt##########tttt",
+"tt#........#tttt","tt##########tttt","tttttttttttttttt","tttttttttttttttt"]);
+TILE.board=art([
+"################","#..............#","#.############.#","#.#  ##      #.#",
+"#.#  #  ##   #.#","#.#         ##.#","#.#   ##     #.#","#.#  #  #  # #.#",
+"#.#        ##.#.","#.############.#","#..............#","################",
+"tttttttttttttttt","tttttttttttttttt","tttttttttttttttt","tttttttttttttttt"]);
+TILE.lift=art([
+"################","#::::::::::::::#","#:############:#","#:#..........#:#",
+"#:#.        .#:#","#:#. ##  ## .#:#","#:#.  #  #  .#:#","#:#.  #  #  .#:#",
+"#:#. ##  ## .#:#","#:#.        .#:#","#:#..........#:#","#:############:#",
+"#::::::::::::::#","################","tttttttttttttttt","tttttttttttttttt"]);
+TILE.mat=art([
+"################","#..............#","#.############.#","#.#          #.#",
+"#.#          #.#","#.#          #.#","#.#          #.#","#.#          #.#",
+"#.############.#","#..............#","################","                ",
+"                ","                ","                ","                "]);
+
+const TPAL={floor:"floor",carpet:"carpet",wall:"wall",desk:"desk",rack:"metal",
+  door:"door",plant:"plant",cabinet:"metal",boxes:"desk",term:"screen",
+  board:"paper",lift:"metal",mat:"door"};
+const SOLID=new Set(["wall","desk","rack","cabinet","boxes","term","board","plant","lift"]);
+
+function drawTile(t,x,y,pal){
+  const a=TILE[t]; if(!a)return;
+  usePal(pal||TPAL[t]||"floor");
+  for(let j=0;j<16;j++)for(let i=0;i<16;i++){ const c=a[j][i]; if(c>=0) px(x+i,y+j,c); }
+}
+
+/* ── Character sprites: 16x16, 't' transparent ── */
+const CH={};
+function chart(rows){ return art(rows); }
+CH.pdown=[chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#          #tt","tt# ##    ## #tt","tt#          #tt","tt#   ####   #tt",
+"ttt#        #ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#....##....#tt","tt#..........#tt","ttt##::::::##ttt","tttt##tttt##tttt"]),
+chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#          #tt","tt# ##    ## #tt","tt#          #tt","tt#   ####   #tt",
+"ttt#        #ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#....##....#tt","tt#..........#tt","ttt#::::::::#ttt","ttt##tttttt##ttt"])];
+CH.pup=[chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt",
+"ttt#::::::::#ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#..........#tt","tt#..........#tt","ttt##::::::##ttt","tttt##tttt##tttt"]),
+chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt",
+"ttt#::::::::#ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#..........#tt","tt#..........#tt","ttt#::::::::#ttt","ttt##tttttt##ttt"])];
+CH.pside=[chart([
+"tttt######tttttt","ttt##::::##ttttt","tt#::::::::#tttt","tt#::::::::#tttt",
+"tt#      ::#tttt","tt# ##   ::#tttt","tt#      ::#tttt","tt#  ###  :#tttt",
+"ttt#      #ttttt","tttt######tttttt","ttt#......#ttttt","tt#........#tttt",
+"tt#...##...#tttt","tt#........#tttt","ttt#::::::#ttttt","tttt##tt##tttttt"]),
+chart([
+"tttt######tttttt","ttt##::::##ttttt","tt#::::::::#tttt","tt#::::::::#tttt",
+"tt#      ::#tttt","tt# ##   ::#tttt","tt#      ::#tttt","tt#  ###  :#tttt",
+"ttt#      #ttttt","tttt######tttttt","ttt#......#ttttt","tt#........#tttt",
+"tt#...##...#tttt","tt#........#tttt","ttt#::::::#ttttt","ttt##tttt##ttttt"])];
+
+/* NPC sprites */
+CH.npcA=[chart([
+"ttttt######ttttt","tttt#......#tttt","tt##.######.##tt","tt#...####...#tt",
+"tt#..::::::..#tt","tt#..#::::#..#tt","tt#..::::::..#tt","tt#...####...#tt",
+"ttt#.::::::.#ttt","tttt##::::##tttt","ttt#..####..#ttt","tt#.........#ttt",
+"tt#..#::::#..#tt","tt#..#::::#..#tt","ttt##ttttt##tttt","tttt##ttttt##ttt"])];
+CH.npcB=[chart([
+"ttttt######ttttt","tttt#::::::#tttt","tt##::::::::##tt","tt#:.######.:#tt",
+"tt#:.#....#.:#tt","tt#:.#.##.#.:#tt","tt#:.#....#.:#tt","tt#:.######.:#tt",
+"ttt#::::::::#ttt","tttt#:....:#tttt","ttt#::####::#ttt","tt#:::::::::#ttt",
+"tt#:.#::::#.:#tt","tt#::#::::#::#tt","ttt##ttttt##tttt","tttt##ttttt##ttt"])];
+CH.npcC=[chart([
+"tttt########tttt","ttt#........#ttt","tt#..######..#tt","tt#.#::::::#.#tt",
+"tt#.#:#::#:#.#tt","tt#.#::::::#.#tt","tt#.#:####:#.#tt","tt#.#::::::#.#tt",
+"tt#..######..#tt","ttt#........#ttt","ttt#..####..#ttt","tt#..######..#tt",
+"tt#.#......#.#tt","tt#.#......#.#tt","ttt##tttttt##ttt","tttt##ttttt##ttt"])];
+
+function drawSprite(a,x,y,flip,pal){
+  usePal(pal||"hero");
+  for(let j=0;j<16;j++)for(let i=0;i<16;i++){
+    const c=a[j][flip?15-i:i]; if(c>=0) px(x+i,y+j,c);
+  }
+}
+
+/* ── Creature sprites: 32x32 drawn from 16x16 art, doubled ── */
+const MON={};
+MON.MULTIFACTOR=chart([
+"tttt####tttt####","ttt#....#tt#...#","tt#..##..#t#.##.","tt#.#::#.#t#.::#",
+"tt#..##..#t#.##.","ttt#....#tt#...#","tttt#..#tttt#..#","ttttt##tttttt##t",
+"tttttt########tt","ttttt#........#t","tttt#..######..#","tttt#.#::::#..#t",
+"tttt#..######..#","ttttt#........#t","tttttt#..##..#tt","ttttttt######ttt"]);
+MON.LOGKEEPER=chart([
+"ttt##########ttt","tt#..........#tt","t#..##....##..#t","t#.#::#..#::#.#t",
+"t#.#:##..##:#.#t","t#..##....##..#t","t#.....##.....#t","t#....####....#t",
+"tt#..........#tt","tt#.########.#tt","tt#.#......#.#tt","tt#.#.####.#.#tt",
+"tt#.#......#.#tt","tt#.########.#tt","ttt#........#ttt","tttt##tttt##tttt"]);
+MON.PATCHLING=chart([
+"tttttt####tttttt","tttt##....##tttt","ttt#........#ttt","tt#..##..##..#tt",
+"tt#.#::#.#::#.#t","tt#..##..##..#tt","t#............#t","t#...######...#t",
+"t#..#......#..#t","t#...######...#t","t#............#t","tt#..........#tt",
+"ttt#........#ttt","tttt########tttt","ttt#..#tt#..#ttt","ttt####tt####ttt"]);
+MON.BACKUPWYRM=chart([
+"ttttttt#####tttt","tttttt#.....#ttt","tttt##..###..#tt","ttt#...#:::#..#t",
+"tt#.....###..#tt","t#...##.....#ttt","t#..####...#tttt","t#...##..##ttttt",
+"tt#.....##..#ttt","ttt#.......#tttt","tt#..#####..#ttt","t#..#.....#..#tt",
+"t#..#.###.#..#tt","tt#..#####..#ttt","ttt#.......#tttt","tttt#######ttttt"]);
+MON.ENCRYPTOR=chart([
+"tt############tt","tt#..........#tt","tt#.########.#tt","tt#.#::::::#.#tt",
+"tt#.#:####:#.#tt","tt#.#:#..#:#.#tt","tt#.#:####:#.#tt","tt#.#::::::#.#tt",
+"tt#.########.#tt","tt#..........#tt","tt#.##.##.##.#tt","tt#..........#tt",
+"tt############tt","ttt#..#tt#..#ttt","ttt#..#tt#..#ttt","ttt####tt####ttt"]);
+MON.SHAREDPASS=chart([
+"tt####tttt####tt","t#....#tt#....#t","#..##..#t#..##.#","#.#::#..#..#::#.",
+"#..##....##..#.t","t#....####....#t","tt####......###t","tttt#........#tt",
+"ttt#..######..#t","tt#..#::::::#..#","tt#.#:##::##:#.#","tt#.#::::::::#.#",
+"tt#..########..#","ttt#..........#t","tttt#.##..##.#tt","ttttt########ttt"]);
+MON.STALEACCT=chart([
+"tttt########tttt","tt##........##tt","t#............#t","#....######....#",
+"#...#::::::#...#","#..#:##::##:#..#","#..#::::::::#..#","#..#:.####.:#..#",
+"#..#::::::::#..#","#...#::::::#...#","#....######....#","t#............#t",
+"tt#..........#tt","tt#.##.##.##.#tt","tt#.#t.#t.#t.#tt","ttt#tt##tt##tttt"]);
+MON.OPENPORT=chart([
+"################","#..............#","#.####....####.#","#.#::#....#::#.#",
+"#.####....####.#","#..............#","#..############.","#..#..........#.",
+"#..#.##.##.##.#.","#..#..........#.","#..#.##.##.##.#.","#..#..........#.",
+"#..############.","#..............#","#.##.##..##.##.#","################"]);
+MON.NOLOGS=chart([
+"tttt########tttt","tt##::::::::##tt","t#::::::::::::#t","#::::::::::::::#",
+"#::::::::::::::#","#::::##::##::::#","#::::##::##::::#","#::::::::::::::#",
+"#::::::::::::::#","#::::######::::#","#::::::::::::::#","#::::::::::::::#",
+"t#::::::::::::#t","tt##::::::::##tt","tttt########tttt","tttttttttttttttt"]);
+MON.TICKETSTORM=chart([
+"#..##..##..##..#","..####..####..##","#..##..##..##..#","tt############tt",
+"t#............#t","#..##......##..#","#.#::#....#::#.#","#..##......##..#",
+"#..............#","#...##########.#","#..#..........#.","#..#.########.#.",
+"#..#..........#.","#...##########.#","t#............#t","tt############tt"]);
+MON.SHADOWIT=chart([
+"tttt##tttt##tttt","ttt#..#tt#..#ttt","tt#....##....#tt","t#...##..##...#t",
+"#...#::#t#::#...","#....##....##..#","#..............#","#....######....#",
+"#...#......#...#","#..#..####..#..#","#...#......#...#","#....######....#",
+"t#............#t","tt#....##....#tt","ttt#..#tt#..#ttt","tttt##tttt##tttt"]);
+
+MON.INVENTORY=chart([
+"ttt##########ttt","tt#..........#tt","tt#.########.#tt","tt#.#::::::#.#tt",
+"tt#.#:#..#:#.#tt","tt#.#::::::#.#tt","tt#.########.#tt","tt#..........#tt",
+"tt#.##.##.##.#tt","tt#..........#tt","tt#.##.##.##.#tt","tt#..........#tt",
+"tt#.##.##.##.#tt","tt#..........#tt","ttt##########ttt","tttt##ttt##tttt "]);
+
+const MONPAL={MULTIFACTOR:"ACCESS",LOGKEEPER:"DETECT",PATCHLING:"HARDEN",
+  BACKUPWYRM:"RECOVER",ENCRYPTOR:"HARDEN",INVENTORY:"GOVERN",
+  SHAREDPASS:"threat",STALEACCT:"void",OPENPORT:"threat",NOLOGS:"void",
+  SHADOWIT:"rot",TICKETSTORM:"boss"};
+function drawMon(name,x,y,scale,pal){
+  const a=MON[name]; if(!a)return; scale=scale||2;
+  usePal(pal||MONPAL[name]||"ui");
+  for(let j=0;j<16;j++)for(let i=0;i<16;i++){
+    const c=a[j][i]; if(c<0)continue;
+    for(let sj=0;sj<scale;sj++)for(let si=0;si<scale;si++) px(x+i*scale+si,y+j*scale+sj,c);
+  }
+}
+
+/* ══ DATA ═══════════════════════════════════════════════════════════
+   Every battle is a real safeguard. Control IDs are CIS Controls v8
+   and NIST CSF 2.0 functions. Verify against source docs before you
+   put any of this in front of an auditor.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const TYPES=["ACCESS","DETECT","HARDEN","RECOVER","GOVERN"];
+
+const MOVES={
+  COLLECT:{name:"Collect",kind:"evidence",pow:4,
+    blurb:"Pulls a config export into the evidence bag."},
+  TEST:{name:"Test",kind:"test",pow:9,
+    blurb:"Damage scales with evidence on hand."},
+  REMEDIATE:{name:"Remediate",kind:"remediate",pow:20,cost:2,
+    blurb:"Heavy. Costs 2 budget."},
+  DOCUMENT:{name:"Document",kind:"document",pow:5,
+    blurb:"Writes policy. Blunts the finding's attack."},
+  ATTEST:{name:"Attest",kind:"attest",pow:12,
+    blurb:"Strong only if the control is fully implemented."}
+};
+
+const CONTROLS={
+  MULTIFACTOR:{name:"MULTIFACTOR",type:"ACCESS",hp:34,atk:9,
+    cis:["6.3","6.4"],csf:"PROTECT",
+    moves:["COLLECT","TEST","DOCUMENT","REMEDIATE"],
+    dex:"Two keys that refuse to work alone. Halves account takeover risk wherever it is actually enforced."},
+  LOGKEEPER:{name:"LOGKEEPER",type:"DETECT",hp:30,atk:8,
+    cis:["8.2","8.5"],csf:"DETECT",
+    moves:["COLLECT","TEST","DOCUMENT","ATTEST"],
+    dex:"Hoards audit logs. Useless unless someone reads them, which is the whole finding, really."},
+  PATCHLING:{name:"PATCHLING",type:"HARDEN",hp:32,atk:10,
+    cis:["7.3","7.4"],csf:"PROTECT",
+    moves:["COLLECT","TEST","REMEDIATE","DOCUMENT"],
+    dex:"Small, bandaged, tireless. Closes known holes on a schedule you have to be able to prove."},
+  BACKUPWYRM:{name:"BACKUPWYRM",type:"RECOVER",hp:40,atk:7,
+    cis:["11.2","11.3"],csf:"RECOVER",
+    moves:["COLLECT","TEST","ATTEST","DOCUMENT"],
+    dex:"A backup nobody has restored from is a rumour. Feed it a test restore twice a year."},
+  INVENTORY:{name:"INVENTORY",type:"GOVERN",hp:36,atk:8,
+    cis:["1.1","2.1"],csf:"IDENTIFY",
+    moves:["COLLECT","DOCUMENT","TEST","ATTEST"],
+    dex:"A ledger that knows what you own. Every other control is a guess until this one is right."},
+  ENCRYPTOR:{name:"ENCRYPTOR",type:"HARDEN",hp:31,atk:11,
+    cis:["3.11"],csf:"PROTECT",
+    moves:["COLLECT","TEST","REMEDIATE","ATTEST"],
+    dex:"A box that only opens for the key holder. Ask it where the keys live and watch it get evasive."}
+};
+
+const FINDINGS={
+  SHAREDPASS:{name:"SHAREDPASS",hp:30,atk:8,weak:"ACCESS",
+    cis:"5.2",csf:"PROTECT",lik:4,imp:4,
+    intro:"A wad of sticky notes with one password on all of them.",
+    fix:"Deploy a password manager. Enforce unique credentials per account.",
+    ev:"Password policy export; password manager licence roster."},
+  STALEACCT:{name:"STALEACCT",hp:34,atk:9,weak:"ACCESS",
+    cis:"5.3",csf:"PROTECT",lik:4,imp:5,
+    intro:"An account belonging to someone who left in March. Still enabled.",
+    fix:"Disable accounts after 45 days dormant. Automate against HR feed.",
+    ev:"Dormant account report; offboarding ticket sample of 5."},
+  OPENPORT:{name:"OPENPORT",hp:38,atk:11,weak:"HARDEN",
+    cis:"4.8",csf:"PROTECT",lik:3,imp:5,
+    intro:"A doorway with teeth. Nobody remembers opening it.",
+    fix:"Disable unnecessary services. Review firewall rules quarterly.",
+    ev:"Port scan output; firewall ruleset with business justification."},
+  NOLOGS:{name:"NOLOGS",hp:36,atk:10,weak:"DETECT",
+    cis:"8.2",csf:"DETECT",lik:3,imp:5,
+    intro:"A void where last Tuesday should be.",
+    fix:"Enable audit logging on all assets. Ship to central store, 90d retention.",
+    ev:"Logging config; retention setting screenshot; sample log query."},
+  SHADOWIT:{name:"SHADOWIT",hp:33,atk:9,weak:"GOVERN",
+    cis:"2.3",csf:"IDENTIFY",lik:5,imp:3,
+    intro:"Four departments bought the same tool on four credit cards.",
+    fix:"Maintain a software inventory. Route purchases through vendor review.",
+    ev:"Software inventory export; approved-vendor list; SSO app list."},
+  TICKETSTORM:{name:"TICKETSTORM",hp:62,atk:12,weak:"HARDEN",boss:true,
+    cis:"7.3",csf:"PROTECT",lik:5,imp:4,
+    intro:"Fifty tickets at once. Every one of them is the same ticket.",
+    fix:"Automate the repeating task. Patch the root cause, not the symptom.",
+    ev:"Ticket volume report before/after; automation script and run log."}
+};
+
+/* ── Acts ── */
+const ACTS=[
+  {n:1,name:"THE HELPDESK",sub:"Sublevel 2",goal:"Survive the queue."},
+  {n:2,name:"THE DOMAIN",sub:"Directory Floor",goal:"Least privilege."},
+  {n:3,name:"THE CLOUD",sub:"Region us-west-2",goal:"Alert before 3am."},
+  {n:4,name:"THE FRAMEWORK",sub:"Policy Wing",goal:"Assess the gap."},
+  {n:5,name:"THE AUDIT",sub:"Conference Rm A",goal:"15 controls, random."}
+];
+
+/* ── Maps ──
+   . floor  , carpet  # wall  D desk  R rack  o door  p plant
+   c cabinet  b boxes  t terminal  w board  L lift  m mat        */
+const MAPS={
+  helpdesk:{
+    name:"SUBLEVEL 2 : DESK",
+    rows:[
+      "####################",
+      "#w..............w..#",
+      "#..DDDD....DDDD....#",
+      "#..DDDD....DDDD..p.#",
+      "#,,................#",
+      "#,,..DDDD..DDDD....#",
+      "#p...DDDD..DDDD....#",
+      "#..................#",
+      "#..t.........c.c...#",
+      "#..................#",
+      "#####o########o#####",
+      "#..................#",
+      "#.p...........b.b..#",
+      "#.................L#",
+      "#..................#",
+      "####################"
+    ],
+    spawn:{x:9,y:8,dir:"up"},
+    doors:[{x:14,y:10,to:"closet",tx:9,ty:13}],
+    lift:{x:18,y:13}
+  },
+  closet:{
+    name:"SERVER CLOSET B",
+    rows:[
+      "####################",
+      "#RRRR#....#RRRR....#",
+      "#RRRR#....#RRRR..b.#",
+      "#....#....#........#",
+      "#....#....#..t.....#",
+      "#RRRR#....#........#",
+      "#RRRR#....#RRRR....#",
+      "#....#....#RRRR....#",
+      "#.........#........#",
+      "#..b.b.............#",
+      "#........c.c.......#",
+      "#..................#",
+      "#.........m........#",
+      "#..................#",
+      "####################"
+    ],
+    spawn:{x:9,y:12,dir:"up"},
+    doors:[{x:9,y:12,to:"helpdesk",tx:14,ty:11}]
+  }
+};
+
+/* ── NPCs ── */
+const NPCS={
+  helpdesk:[
+    {x:9,y:2,spr:"npcA",name:"MARGIT",face:"down",kind:"heal",
+     lines:[["MARGIT, TIER 2","Sublevel 2 is where tickets come to die. Welcome."],
+            ["MARGIT","Queue's at fifty. Fifty. Same ticket, fifty times."],
+            ["MARGIT","Talk to DEV at the terminal. He'll set you up with a CONTROL."]],
+     after:[["MARGIT","Fifty tickets. One root cause. Go find it."]]},
+    {x:15,y:6,spr:"npcB",name:"DEV",face:"left",kind:"giver",gives:"PATCHLING",need:0,
+     lines:[["DEV, SYSTEMS","New hire? Here. Take this. Don't lose it."],
+            ["DEV","A CONTROL isn't a tool. It's a claim you can defend with evidence."],
+            ["DEV","Beat a FINDING and it goes in your RISK REGISTER. That's the real deliverable."]],
+     after:[["DEV","Evidence goes stale in 90 days. Re-collect before the audit."]]},
+    {x:5,y:8,spr:"npcC",name:"AUDIT BOT",face:"right",kind:"giver",gives:"MULTIFACTOR",need:1,
+     lines:[["AUDIT BOT v0.9","QUERY: Do you have evidence?"],
+            ["AUDIT BOT v0.9","A screenshot with no timestamp is not evidence. It is a picture."],
+            ["AUDIT BOT v0.9","Press ENTER. Read your RISK REGISTER. It is the only thing I will ask about."]],
+     locked:[["AUDIT BOT v0.9","QUERY: Do you have evidence?"],
+             ["AUDIT BOT v0.9","Log one finding. Then I will issue you an ACCESS control."]],
+     after:[["AUDIT BOT v0.9","Undated evidence is a picture, not a record."]]},
+    {x:17,y:12,spr:"npcA",name:"ROSA",face:"left",kind:"giver",gives:"INVENTORY",need:2,
+     lines:[["ROSA, FACILITIES","Lift's locked till you clear the queue. Manager's orders."],
+            ["ROSA","Nobody knows what we own. Take the ledger. It is the only thing SHADOWIT fears."]],
+     locked:[["ROSA, FACILITIES","Lift's locked till the queue clears. Manager's orders."],
+             ["ROSA","Log two findings and I'll dig out something that helps."]],
+     after:[["ROSA","Count what you own before you claim you protect it."]]}
+  ],
+  closet:[
+    {x:14,y:4,spr:"npcB",name:"KENJI",face:"down",kind:"giver",gives:"LOGKEEPER",need:0,
+     lines:[["KENJI, INFRA","Rack B logs to nowhere. Has for two years."],
+            ["KENJI","Nobody noticed because nobody looked. That's the finding, not the config."],
+            ["KENJI","Take LOGKEEPER. It hits NOLOGS for double."]],
+     after:[["KENJI","Retention setting, not just the logging toggle. Auditors ask for both."]]}
+  ]
+};
+
+/* Wild encounter zones: tile positions that trigger a fixed finding */
+const ENCOUNTERS={
+  helpdesk:[
+    {x:2,y:4,f:"SHAREDPASS"},{x:3,y:4,f:"SHAREDPASS"},
+    {x:2,y:5,f:"SHAREDPASS"},{x:3,y:5,f:"SHAREDPASS"},
+    {x:15,y:12,f:"SHADOWIT"},{x:13,y:12,f:"SHADOWIT"}
+  ],
+  closet:[
+    {x:6,y:4,f:"NOLOGS"},{x:7,y:4,f:"NOLOGS"},{x:6,y:5,f:"NOLOGS"},
+    {x:4,y:9,f:"STALEACCT"},{x:7,y:9,f:"STALEACCT"},
+    {x:16,y:7,f:"OPENPORT"},{x:16,y:8,f:"OPENPORT"}
+  ]
+};
+
+/* ══ STORY ══════════════════════════════════════════════════════════
+   The spine: Meridian Logistics failed its audit because someone
+   attested to controls that were never implemented. That person left
+   in March. You inherited their desk, their tickets, and their lie.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const PROLOGUE=[
+  {pal:"void", art:null, lines:[
+    "MERIDIAN LOGISTICS",
+    "",
+    "Ninety-one days ago an auditor asked for evidence that eleven controls were working.",
+    "She was given eleven screenshots. None of them had a date on them."]},
+  {pal:"uibad", art:null, lines:[
+    "The report came back QUALIFIED.",
+    "",
+    "Two customers put their renewals on hold. The re-audit is in ninety days.",
+    "The analyst who signed the attestation resigned in March."]},
+  {pal:"ACCESS", art:null, lines:[
+    "You were hired last Tuesday.",
+    "",
+    "Not for any of that. You were hired for the helpdesk, on Sublevel 2, at the desk that used to be theirs.",
+    "Nobody has cleaned out the drawers."]},
+  {pal:"screen", art:null, lines:[
+    "It is 08:41.",
+    "",
+    "There are fifty tickets in the queue.",
+    "Forty-nine of them are the same ticket."]}
+];
+
+/* Beats fire once, after the named finding is logged. */
+const BEATS={
+  SHAREDPASS:{title:"THE DRAWER", pal:"desk", lines:[
+    "The sticky notes were in the desk drawer. Your desk drawer.",
+    "Twelve passwords in the same handwriting, and one of them still works."]},
+  NOLOGS:{title:"TWO YEARS", pal:"void", lines:[
+    "KENJI was right. Rack B has logged nothing since the migration.",
+    "The control was marked IMPLEMENTED nineteen months ago.",
+    "Someone ticked a box instead of checking a setting."]},
+  SHADOWIT:{title:"FOUR CARDS", pal:"rot", lines:[
+    "Four departments, four corporate cards, one piece of software.",
+    "Nobody was hiding anything. There was no intake process to follow, so they went around one that did not exist."]},
+  STALEACCT:{title:"WHO IT BELONGED TO", pal:"uibad", lines:[
+    "The dormant account has a name on it.",
+    "It is the analyst who resigned in March. The one who signed the attestation.",
+    "The account is still enabled. It still has domain admin.",
+    "Five months, and nobody ran the report that would have caught it."]},
+  OPENPORT:{title:"THE JUSTIFICATION FIELD", pal:"threat", lines:[
+    "The firewall rule has a justification field.",
+    "It reads: temporary - remove after testing.",
+    "It was written in 2023."]},
+  TICKETSTORM:{title:"THE ROOT CAUSE", pal:"boss", lines:[
+    "The fifty tickets came from a script.",
+    "Your predecessor wrote it. It closes failed-login tickets automatically, fixing nothing, so the queue metric stays green.",
+    "It has been running since March.",
+    "It was never the tickets. It was never going to be the tickets."]}
+};
+
+const ENDING=[
+  {pal:"paper", lines:[
+    "In the bottom drawer, under the sticky notes, there is a printout.",
+    "LAST YEAR'S ATTESTATION. Eleven controls. Eleven boxes ticked IMPLEMENTED.",
+    "It is signed and dated."]},
+  {pal:"uibad", lines:[
+    "You have spent a week proving that at least six of those eleven were never true.",
+    "None of them was a lie about something hard. Every one was a lie about an afternoon's work."]},
+  {pal:"uigood", lines:[
+    "You have something they did not.",
+    "A register with likelihood, impact and residual scores. A POA&M with owners and dates.",
+    "And for every claim, an artifact with a timestamp on it."]},
+  {pal:"ACCESS", lines:[
+    "MARGIT signs your lift access at 17:52.",
+    "\"Directory floor,\" she says. \"Fifty accounts, and no idea who half of them belong to.\"",
+    "\"Same job. Bigger blast radius.\"",
+    "",
+    "ACT 1 COMPLETE - Day "]}
+];
+
+/* Journal entries unlock alongside beats and give the player a recap. */
+const JOURNAL=[
+  {key:"start", t:"THE QUALIFIED REPORT",
+   b:"Meridian failed its SOC 2 Type II. Eleven controls attested, no dated evidence behind any of them. Re-audit in 90 days."},
+  {key:"SHAREDPASS", t:"THE DRAWER",
+   b:"Twelve shared passwords in my desk drawer, in my predecessor's handwriting. One still works. CIS 5.2."},
+  {key:"NOLOGS", t:"RACK B",
+   b:"No audit logs for 19 months on a control marked IMPLEMENTED. Nobody looked, so nobody knew. CIS 8.2."},
+  {key:"SHADOWIT", t:"FOUR CARDS",
+   b:"Same tool bought four times. Not malice - there was no intake process to follow. CIS 2.3."},
+  {key:"STALEACCT", t:"THE ACCOUNT",
+   b:"The dormant admin account belongs to the analyst who signed the attestation and left in March. Still enabled. CIS 5.3."},
+  {key:"OPENPORT", t:"TEMPORARY",
+   b:"Firewall rule justified as temporary, remove after testing. Written in 2023. CIS 4.8."},
+  {key:"TICKETSTORM", t:"THE SCRIPT",
+   b:"The ticket flood is an auto-close bot my predecessor wrote to keep the queue metric green. Running since March. CIS 7.3."},
+  {key:"end", t:"WHAT I HAVE",
+   b:"Six findings, scored and evidenced. A POA&M with owners and dates. The difference between me and the last analyst is a timestamp."}
+];
+
+/* ══ AUDIO ══════════════════════════════════════════════════════════
+   Two pulse voices, a triangle bass and a noise channel, which is
+   roughly the Game Boy's voice allocation. Everything is synthesised
+   at runtime; there are no audio files to load or host.
+   ═══════════════════════════════════════════════════════════════════ */
+const SND={ctx:null, master:null, on:true, ready:false,
+  track:null, next:0, step:0, timer:null};
+
+function audioInit(){
+  if(SND.ctx) { if(SND.ctx.state==="suspended") SND.ctx.resume(); return; }
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) return;
+  SND.ctx=new AC();
+  SND.master=SND.ctx.createGain();
+  SND.master.gain.value=SND.on?0.16:0;
+  SND.master.connect(SND.ctx.destination);
+  SND.ready=true;
+  if(SND.pending){ const t=SND.pending; SND.pending=null; music(t); }
+}
+function audioToggle(){
+  SND.on=!SND.on;
+  if(SND.master) SND.master.gain.setTargetAtTime(SND.on?0.16:0, SND.ctx.currentTime, 0.02);
+  return SND.on;
+}
+function mtof(m){ return 440*Math.pow(2,(m-69)/12); }
+
+/* one pulse/triangle note */
+function tone(midi,t0,dur,wave,vol,slide){
+  if(!SND.ready) return;
+  const c=SND.ctx, o=c.createOscillator(), g=c.createGain();
+  o.type=wave||"square";
+  const f=mtof(midi);
+  o.frequency.setValueAtTime(f,t0);
+  if(slide) o.frequency.exponentialRampToValueAtTime(mtof(midi+slide), t0+dur);
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.exponentialRampToValueAtTime(vol||0.18, t0+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  o.connect(g); g.connect(SND.master);
+  o.start(t0); o.stop(t0+dur+0.02);
+}
+/* noise burst for percussion and impacts */
+function noise(t0,dur,vol,hp){
+  if(!SND.ready) return;
+  const c=SND.ctx, n=Math.floor(c.sampleRate*dur);
+  const buf=c.createBuffer(1,Math.max(1,n),c.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  const src=c.createBufferSource(); src.buffer=buf;
+  const g=c.createGain(); g.gain.value=vol||0.1;
+  const f=c.createBiquadFilter(); f.type=hp?"highpass":"lowpass"; f.frequency.value=hp||2200;
+  src.connect(f); f.connect(g); g.connect(SND.master);
+  src.start(t0); src.stop(t0+dur+0.02);
+}
+
+/* ── sound effects ── */
+const SFX={
+  cursor:  t=>tone(84,t,0.05,"square",0.10),
+  confirm: t=>{tone(76,t,0.06,"square",0.13); tone(83,t+0.05,0.09,"square",0.13);},
+  cancel:  t=>{tone(72,t,0.06,"square",0.11); tone(65,t+0.05,0.08,"square",0.11);},
+  text:    t=>tone(88,t,0.018,"square",0.045),
+  bump:    t=>noise(t,0.06,0.07,null),
+  door:    t=>{tone(60,t,0.10,"triangle",0.14); tone(67,t+0.09,0.14,"triangle",0.12);},
+  deny:    t=>{tone(58,t,0.10,"sawtooth",0.11); tone(53,t+0.10,0.18,"sawtooth",0.11);},
+  encounter:t=>{for(let i=0;i<6;i++) tone(60+i*3,t+i*0.055,0.06,"square",0.14);
+                noise(t+0.34,0.30,0.12,null);},
+  collect: t=>{tone(72,t,0.05,"square",0.12); tone(79,t+0.05,0.05,"square",0.12); tone(84,t+0.10,0.10,"square",0.12);},
+  hit:     t=>{noise(t,0.14,0.13,null); tone(45,t,0.14,"sawtooth",0.10,-6);},
+  crit:    t=>{noise(t,0.22,0.17,null); tone(50,t,0.22,"sawtooth",0.13,-9); tone(57,t+0.04,0.18,"square",0.10,-9);},
+  hurt:    t=>{tone(52,t,0.16,"sawtooth",0.12,-5); noise(t,0.10,0.08,null);},
+  logged:  t=>{[72,76,79,84].forEach((n,i)=>tone(n,t+i*0.07,0.16,"square",0.13));},
+  levelup: t=>{[72,76,79,84,88].forEach((n,i)=>tone(n,t+i*0.06,0.20,"square",0.14));},
+  faint:   t=>{tone(64,t,0.5,"triangle",0.14,-14);},
+  page:    t=>tone(80,t,0.03,"square",0.06)
+};
+let _lastSfx=0;
+function sfx(name){
+  if(!SND.ready||!SND.on) return;
+  const f=SFX[name]; if(!f) return;
+  const now=SND.ctx.currentTime;
+  if(name==="text"||name==="page"){ if(now-_lastSfx<0.028) return; _lastSfx=now; }
+  f(now+0.001);
+}
+
+/* ── music: 16 steps per bar, arrays of MIDI (0 = rest) ── */
+const A=0; // rest, reads better in the patterns below
+const TRACKS={
+  title:{bpm:76, ch:[
+    {w:"square",v:0.10,n:[69,A,A,A,72,A,A,A,76,A,A,A,72,A,A,A, 71,A,A,A,74,A,A,A,79,A,A,A,74,A,A,A]},
+    {w:"triangle",v:0.14,n:[45,A,A,A,A,A,A,A,45,A,A,A,A,A,A,A, 43,A,A,A,A,A,A,A,43,A,A,A,A,A,A,A]},
+    {w:"noise",v:0.00,n:new Array(32).fill(A)}
+  ]},
+  world:{bpm:126, ch:[
+    {w:"square",v:0.09,n:[69,A,72,A,76,A,72,A, 74,A,72,A,69,A,A,A,
+                          67,A,71,A,74,A,71,A, 72,A,71,A,69,A,A,A]},
+    {w:"square",v:0.05,n:[A,A,A,A,64,A,A,A,A,A,A,A,62,A,A,A,
+                          A,A,A,A,62,A,A,A,A,A,A,A,64,A,A,A]},
+    {w:"triangle",v:0.13,n:[45,A,A,45,A,A,45,A, 43,A,A,43,A,A,43,A,
+                            41,A,A,41,A,A,41,A, 43,A,A,43,A,A,45,A]},
+    {w:"noise",v:0.055,n:[1,A,A,A,1,A,A,A,1,A,A,A,1,A,1,A,
+                          1,A,A,A,1,A,A,A,1,A,A,A,1,A,1,A]}
+  ]},
+  battle:{bpm:158, ch:[
+    {w:"square",v:0.10,n:[69,71,72,A,76,A,72,A, 74,A,72,71,69,A,A,A,
+                          68,70,71,A,75,A,71,A, 73,A,71,70,68,A,A,A]},
+    {w:"square",v:0.06,n:[A,A,64,A,A,A,64,A,A,A,62,A,A,A,62,A,
+                          A,A,63,A,A,A,63,A,A,A,61,A,A,A,61,A]},
+    {w:"triangle",v:0.15,n:[45,45,A,45,A,45,A,45, 43,43,A,43,A,43,A,43,
+                            44,44,A,44,A,44,A,44, 42,42,A,42,A,42,A,42]},
+    {w:"noise",v:0.07,n:[1,A,1,A,1,A,1,A,1,A,1,A,1,A,1,1,
+                         1,A,1,A,1,A,1,A,1,A,1,A,1,A,1,1]}
+  ]},
+  boss:{bpm:172, ch:[
+    {w:"square",v:0.11,n:[64,A,63,A,64,A,67,A, 66,A,64,A,63,A,A,A,
+                          62,A,61,A,62,A,66,A, 64,A,63,A,61,A,A,A]},
+    {w:"sawtooth",v:0.05,n:[A,52,A,51,A,52,A,55, A,54,A,52,A,51,A,A,
+                            A,50,A,49,A,50,A,54, A,52,A,51,A,49,A,A]},
+    {w:"triangle",v:0.16,n:[40,40,40,A,40,40,A,40, 39,39,39,A,39,39,A,39,
+                            38,38,38,A,38,38,A,38, 39,39,39,A,39,39,A,39]},
+    {w:"noise",v:0.085,n:[1,1,A,1,1,A,1,1,1,1,A,1,1,A,1,1,
+                          1,1,A,1,1,A,1,1,1,1,A,1,1,A,1,1]}
+  ]},
+  story:{bpm:64, ch:[
+    {w:"triangle",v:0.09,n:[57,A,A,A,A,A,A,A, 60,A,A,A,A,A,A,A,
+                            55,A,A,A,A,A,A,A, 59,A,A,A,A,A,A,A]},
+    {w:"triangle",v:0.06,n:[A,A,A,A,A,A,A,A, 64,A,A,A,A,A,A,A,
+                            A,A,A,A,A,A,A,A, 62,A,A,A,A,A,A,A]},
+    {w:"noise",v:0.00,n:new Array(32).fill(A)}
+  ]},
+  win:{bpm:150, loop:false, ch:[
+    {w:"square",v:0.13,n:[72,72,72,A,79,A,A,A, 76,A,79,A,84,A,A,A,
+                          A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A]},
+    {w:"triangle",v:0.14,n:[48,48,48,A,52,A,A,A, 55,A,52,A,60,A,A,A,
+                            A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A]},
+    {w:"noise",v:0.06,n:[1,1,1,A,1,A,A,A,1,A,1,A,1,A,A,A,
+                         A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A]}
+  ]}
+};
+
+let _queued=null;
+function music(name){
+  if(!SND.ready){ SND.pending=name; return; }
+  if(SND.trackName===name) return;
+  SND.trackName=name;
+  SND.track=TRACKS[name]||null;
+  SND.step=0;
+  SND.next=SND.ctx.currentTime+0.06;
+  if(!SND.timer) SND.timer=setInterval(schedule,25);
+}
+function schedule(){
+  if(!SND.ready||!SND.on||!SND.track) return;
+  const t=SND.track, spb=60/t.bpm/4;          // sixteenth notes
+  const horizon=SND.ctx.currentTime+0.14;
+  while(SND.next<horizon){
+    const s=SND.step % t.ch[0].n.length;
+    for(const c of t.ch){
+      const v=c.n[s];
+      if(!v) continue;
+      if(c.w==="noise") noise(SND.next,0.045,c.v,4000);
+      else tone(v,SND.next,spb*(c.w==="triangle"?1.6:1.25),c.w,c.v);
+    }
+    SND.next+=spb; SND.step++;
+    if(t.loop===false && SND.step>=t.ch[0].n.length){
+      SND.trackName=null; SND.track=null;
+      if(_queued){ const q=_queued; _queued=null; setTimeout(()=>music(q),20); }
+      break;
+    }
+  }
+}
+function musicThen(short,back){ _queued=back; music(short); }
+
+/* ══ STATE ══════════════════════════════════════════════════════════ */
+const S={
+  scene:"title", map:"helpdesk",
+  tx:9,ty:8, ox:0,oy:0, dir:"down", step:0, walking:false, anim:0,
+  party:[], evidence:[], register:[], budget:6, day:1, journal:["start"], cut:null, seen:{helpdesk:true}, bumped:0,
+  act:1, flags:{}, cleared:{},
+  msg:null, menuIdx:0, subIdx:0, scroll:0,
+  battle:null, tick:0, fade:0, notice:null, noticeT:0
+};
+const keys={};
+const PRESSED={};
+addEventListener("keydown",e=>{
+  const k=norm(e.key); if(!k)return; e.preventDefault();
+  if(!keys[k]) PRESSED[k]=true; keys[k]=true;
+});
+addEventListener("keyup",e=>{ const k=norm(e.key); if(k){keys[k]=false;} });
+function norm(k){
+  k=k.toLowerCase();
+  if(k==="arrowup"||k==="w")return"up";
+  if(k==="arrowdown"||k==="s")return"down";
+  if(k==="arrowleft"||k==="a")return"left";
+  if(k==="arrowright"||k==="d")return"right";
+  if(k==="z"||k===" ")return"ok";
+  if(k==="x"||k==="escape"||k==="backspace")return"back";
+  if(k==="enter")return"menu";
+  if(k==="m")return"map";
+  return null;
+}
+function hit(k){ if(PRESSED[k]){PRESSED[k]=false;return true;} return false; }
+function clearPressed(){ for(const k in PRESSED) PRESSED[k]=false; }
+
+/* ══ SAVE ═══════════════════════════════════════════════════════════ */
+async function save(){
+  const data={map:S.map,tx:S.tx,ty:S.ty,dir:S.dir,party:S.party,evidence:S.evidence,journal:S.journal,
+    register:S.register,budget:S.budget,day:S.day,act:S.act,flags:S.flags,cleared:S.cleared,seen:S.seen};
+  try{ if(window.storage) await window.storage.set("cq:save",JSON.stringify(data)); }
+  catch(e){ /* storage unavailable; session-only play */ }
+}
+async function load(){
+  try{
+    if(!window.storage) return false;
+    const r=await window.storage.get("cq:save");
+    if(!r) return false;
+    const d=JSON.parse(r.value); Object.assign(S,d); return true;
+  }catch(e){ return false; }
+}
+
+/* ══ MAP HELPERS ════════════════════════════════════════════════════ */
+const TKEY={".":"floor",",":"carpet","#":"wall","D":"desk","R":"rack","o":"door",
+  "p":"plant","c":"cabinet","b":"boxes","t":"term","w":"board","L":"lift","m":"mat"};
+function mp(){ return MAPS[S.map]; }
+function tileAt(x,y){
+  const r=mp().rows;
+  if(y<0||y>=r.length||x<0||x>=r[0].length) return "#";
+  return r[y][x];
+}
+function solidAt(x,y){
+  const t=TKEY[tileAt(x,y)]||"floor";
+  if(SOLID.has(t)) return true;
+  for(const n of (NPCS[S.map]||[])) if(n.x===x&&n.y===y) return true;
+  return false;
+}
+function npcAt(x,y){ return (NPCS[S.map]||[]).find(n=>n.x===x&&n.y===y); }
+function encAt(x,y){
+  const e=(ENCOUNTERS[S.map]||[]).find(e=>e.x===x&&e.y===y);
+  if(!e) return null;
+  if(S.cleared[e.f]) return null;
+  return e;
+}
+function camera(){
+  const mw=mp().rows[0].length*TS, mh=mp().rows.length*TS;
+  let cx=S.tx*TS+S.ox+8-W/2, cy=S.ty*TS+S.oy+8-H/2;
+  cx=Math.max(0,Math.min(mw-W,cx)); cy=Math.max(0,Math.min(mh-H,cy));
+  return {cx:Math.round(cx),cy:Math.round(cy)};
+}
+
+/* ══ DIALOGUE ═══════════════════════════════════════════════════════ */
+function say(pages,onDone){
+  const out=[];
+  for(const p of pages){
+    const ls=wrap(p[1],23);
+    for(let i=0;i<ls.length;i+=3) out.push([i===0?p[0]:"",ls.slice(i,i+3).join(" ")]);
+  }
+  S.msg={pages:out,i:0,ch:0,done:false,onDone:onDone||null};
+  S.scene="dialog"; clearPressed();
+}
+function drawBox(x,y,w,h,pal){
+  usePal(pal||"ui");
+  rect(x,y,w,h,0); frame(x,y,w,h,2); frame(x+2,y+2,w-4,h-4,1);
+}
+function drawMsg(){
+  const p=S.msg.pages[S.msg.i]; if(!p)return;
+  const who=p[0], lines=wrap(p[1],23).slice(0,3);
+  drawBox(0,92,160,52,"ui");
+  if(who){ usePal("uiwarn"); const w=textw(who)+10; rect(4,84,w,12,0); frame(4,84,w,12,2); text(who,9,86,3); }
+  usePal("ui"); let shown=S.msg.ch, y=100;
+  for(const ln of lines){
+    text(ln.substring(0,Math.max(0,shown)),9,y,3);
+    shown-=ln.length; y+=12;
+    if(shown<=0) break;
+  }
+  if(S.msg.done && (S.tick>>4)%2===0){ usePal("uiwarn"); rect(149,133,4,3,3); rect(150,136,2,1,3); }
+}
+function msgLen(p){ return wrap(p[1],23).slice(0,3).join("").length; }
+function updMsg(){
+  const p=S.msg.pages[S.msg.i];
+  const total=msgLen(p);
+  if(!S.msg.done){
+    const before=S.msg.ch;
+    S.msg.ch+= keys.ok?3:1;
+    if(S.msg.ch>before) sfx("text");
+    if(S.msg.ch>=total){S.msg.ch=total;S.msg.done=true;}
+  } else if(hit("ok")||hit("back")){
+    sfx("page");
+    S.msg.i++; S.msg.ch=0; S.msg.done=false;
+    if(S.msg.i>=S.msg.pages.length){
+      const cb=S.msg.onDone; S.msg=null; S.scene="world";
+      if(cb) cb();
+    }
+  }
+}
+function story(cards,onDone){
+  music("story");
+  const pages=[];
+  for(const c of cards){
+    const avail=c.title?96:104;      // pixels between header and footer rule
+    let cur=[], h=0, first=true;
+    for(const raw of c.lines){
+      const chunk = raw==="" ? [""] : wrap(raw,24);
+      for(const ln of chunk){
+        const lh = ln==="" ? 6 : 11;
+        if(h+lh>avail && cur.length){
+          pages.push({title:first?c.title:null,pal:c.pal,lines:cur});
+          cur=[]; h=0; first=false;
+          if(ln==="") continue;      // don't lead a page with a blank
+        }
+        cur.push(ln); h+=lh;
+      }
+    }
+    if(cur.length) pages.push({title:first?c.title:null,pal:c.pal,lines:cur});
+    // orphan control: never end a card on a single dangling line
+    if(pages.length>=2){
+      const last=pages[pages.length-1], prev=pages[pages.length-2];
+      if(last.lines.length===1 && prev.lines.length>3 && prev.pal===last.pal){
+        last.lines.unshift(prev.lines.pop());
+        if(prev.lines[prev.lines.length-1]==="") prev.lines.pop();
+      }
+    }
+  }
+  S.cut={cards:pages,i:0,ch:0,done:false,onDone:onDone||null};
+  S.scene="story"; clearPressed();
+}
+function cutLines(c){ return c.lines; }
+function drawStory(){
+  const c=S.cut.cards[S.cut.i];
+  clear(0,c.pal||"ui");
+  usePal(c.pal||"ui");
+  rect(0,0,W,3,1); rect(0,H-3,W,3,1);
+  for(let i=0;i<W;i+=4) px(i,6,1);
+  for(let i=0;i<W;i+=4) px(i,H-7,1);
+  if(c.title){ rect(6,12,textw(c.title)+8,12,1); text(c.title,10,15,3); }
+  let shown=S.cut.ch, y=c.title?32:26;
+  for(const ln of c.lines){
+    if(ln===""){ y+=6; continue; }
+    text(ln.substring(0,Math.max(0,shown)),10,y,3);
+    shown-=ln.length; y+=11;
+    if(shown<=0) break;
+  }
+  if(S.cut.done&&(S.tick>>4)%2===0){ rect(146,H-14,5,4,3); rect(147,H-10,3,1,3); }
+}
+function updStory(){
+  const c=S.cut.cards[S.cut.i];
+  const total=c.lines.join("").length;
+  if(!S.cut.done){
+    const b4=S.cut.ch;
+    S.cut.ch+=keys.ok?4:1;
+    if(S.cut.ch>b4) sfx("text");
+    if(S.cut.ch>=total){S.cut.ch=total;S.cut.done=true;}
+  } else if(hit("ok")||hit("back")){
+    sfx("page");
+    S.cut.i++; S.cut.ch=0; S.cut.done=false;
+    if(S.cut.i>=S.cut.cards.length){
+      const cb=S.cut.onDone; S.cut=null; S.scene="world"; music("world");
+      if(cb) cb();
+    }
+  }
+}
+function unlock(key){ if(!S.journal.includes(key)) S.journal.push(key); }
+function beat(fid,then){
+  const b=BEATS[fid];
+  unlock(fid);
+  if(!b){ if(then)then(); return; }
+  story([{title:b.title,pal:b.pal,lines:b.lines}],then);
+}
+function notice(t){ S.notice=t; S.noticeT=110; }
+
+/* ══ WORLD ══════════════════════════════════════════════════════════ */
+function updWorld(){
+  if(S.bumped>0)S.bumped--;
+  if(hit("map")){ sfx("confirm"); S.mapFrom="world"; S.scene="map"; return; }
+  if(hit("menu")){ sfx("confirm"); S.scene="menu"; S.menuIdx=0; return; }
+  if(S.walking){
+    S.step+=2; const d=S.step;
+    if(S.dir==="up")S.oy=-d; if(S.dir==="down")S.oy=d;
+    if(S.dir==="left")S.ox=-d; if(S.dir==="right")S.ox=d;
+    S.anim=(S.step>4&&S.step<13)?1:0;
+    if(S.step>=16){
+      S.walking=false; S.step=0; S.ox=0; S.oy=0; S.anim=0;
+      if(S.dir==="up")S.ty--; if(S.dir==="down")S.ty++;
+      if(S.dir==="left")S.tx--; if(S.dir==="right")S.tx++;
+      arrive();
+    }
+    return;
+  }
+  if(hit("ok")){ interact(); return; }
+  let d=null;
+  if(keys.up)d="up"; else if(keys.down)d="down";
+  else if(keys.left)d="left"; else if(keys.right)d="right";
+  if(d){
+    S.dir=d;
+    const n=step(S.tx,S.ty,d);
+    if(!solidAt(n.x,n.y)) S.walking=true;
+    else if(!S.bumped){ sfx("bump"); S.bumped=6; }
+  }
+}
+function step(x,y,d){
+  if(d==="up")return{x,y:y-1}; if(d==="down")return{x,y:y+1};
+  if(d==="left")return{x:x-1,y}; return{x:x+1,y};
+}
+function arrive(){
+  const m=mp();
+  const dr=(m.doors||[]).find(d=>d.x===S.tx&&d.y===S.ty);
+  if(dr){ sfx("door"); S.map=dr.to; S.tx=dr.tx; S.ty=dr.ty; S.seen[dr.to]=true; notice(MAPS[S.map].name); save(); return; }
+  if(m.lift&&m.lift.x===S.tx&&m.lift.y===S.ty){ tryLift(); return; }
+  const e=encAt(S.tx,S.ty);
+  if(e){ sfx("encounter"); setTimeout(()=>{},0); startBattle(e.f); }
+}
+function interact(){
+  const n=step(S.tx,S.ty,S.dir);
+  const npc=npcAt(n.x,n.y);
+  if(npc){ talkTo(npc); return; }
+  const t=TKEY[tileAt(n.x,n.y)];
+  if(t==="term"){ termUse(); return; }
+  else if(t==="board") say([["WHITEBOARD","EVIDENCE = artifact + date + who produced it. Anything\nless is an anecdote."]]);
+  else if(t==="rack") say([["RACK","Fans, dust, and a label maker nobody has used since 2019."]]);
+  else if(t==="cabinet") say([["CABINET","Binders of policies. Last reviewed: unclear."]]);
+  else if(t==="boxes") say([["BOXES","Asset tags on none of them. CIS 1.1 would like a word."]]);
+  else if(t==="lift") tryLift();
+}
+function talkTo(npc){
+  npc.face=opposite(S.dir);
+  if(npc.kind==="giver"&&!S.flags["gave_"+npc.gives]){
+    if(S.register.length<(npc.need||0)){ say(npc.locked||npc.lines); return; }
+    say(npc.lines,()=>{
+      S.flags["gave_"+npc.gives]=true;
+      addControl(npc.gives);
+      const c=CONTROLS[npc.gives];
+      say([["",c.name+" joined your party!"],
+           ["",c.name+" is a "+c.type+" control. CIS "+c.cis.join(", ")+"."],
+           ["","Findings weak to "+c.type+" take double from Test and\nRemediate."]]);
+    });
+    return;
+  }
+  if(npc.kind==="heal"&&S.party.length&&S.flags["met_"+npc.name]){
+    const hurt=S.party.some(p=>p.hp<p.max);
+    S.party.forEach(p=>p.hp=p.max);
+    say(hurt?[["MARGIT","You look rough. Sit. Coffee's terrible but it's free."],
+              ["","Your CONTROLS were restored to full."]]
+            :[["MARGIT","Queue's at "+(50-clearedCount()*9)+". Go on."]]);
+    return;
+  }
+  const done=npc.kind==="giver"?S.flags["gave_"+npc.gives]:S.flags["met_"+npc.name];
+  S.flags["met_"+npc.name]=true;
+  say(done&&npc.after?npc.after:npc.lines);
+}
+function opposite(d){ return {up:"down",down:"up",left:"right",right:"left"}[d]; }
+
+function clearedCount(){
+  return ["SHAREDPASS","SHADOWIT","NOLOGS","STALEACCT","OPENPORT"].filter(f=>S.cleared[f]).length;
+}
+function termUse(){
+  if(S.map==="closet"){
+    say([["TERMINAL","> grep -c . /var/log/audit.log\n0","Two years of nothing."]]);
+    return;
+  }
+  if(S.cleared.TICKETSTORM){
+    say([["TERMINAL","> tail -f queue.log\n3 open. All different.\n> _"]]);
+    return;
+  }
+  const got=clearedCount();
+  if(got>=3){
+    say([["TERMINAL","> tail -f queue.log\n50 open. Same ticket.\n> trace --root-cause"],
+         ["TERMINAL","Something is generating them. It is still running."]],()=>startBattle("TICKETSTORM"));
+  } else {
+    say([["TERMINAL","> tail -f queue.log\n50 open. 50 identical.","Root cause trace needs "+(3-got)+" more logged finding(s)."]]);
+  }
+}
+function tryLift(){
+  const got=clearedCount();
+  if(!S.cleared.TICKETSTORM){
+    sfx("deny");
+    if(got>=3) say([["LIFT","LOCKED. Root cause still running. Terminal, desk floor."]]);
+    else say([["LIFT","LOCKED. Log "+(3-got)+" more finding(s) to trace the root cause."]]);
+    return;
+  }
+  if(S.flags.ending){ say([["LIFT","Act 2: THE DOMAIN is not built yet. That part is yours - the README says how."]]); return; }
+  S.flags.ending=true; unlock("end"); S.act=1;
+  const cards=ENDING.map(c=>({pal:c.pal,lines:c.lines.slice()}));
+  const last=cards[cards.length-1].lines;
+  last[last.length-1]="ACT 1 COMPLETE - Day "+S.day+" of 90";
+  story(cards,()=>{
+    say([["","Findings logged: "+S.register.length+".  Evidence on file: "+S.evidence.length+"."],
+         ["","Open the menu and choose EXPORT. Take the register and the POA&M with you."]]);
+  });
+}
+
+function drawWorld(){
+  clear(3);
+  const {cx,cy}=camera();
+  const m=mp();
+  const x0=Math.floor(cx/TS), y0=Math.floor(cy/TS);
+  for(let j=-1;j<=H/TS+1;j++)for(let i=-1;i<=W/TS+1;i++){
+    const tx=x0+i, ty=y0+j;
+    const t=TKEY[tileAt(tx,ty)]||"floor";
+    const base=(t==="carpet")?"carpet":"floor";
+    drawTile(base,tx*TS-cx,ty*TS-cy);
+    if(t!=="floor"&&t!=="carpet") drawTile(t,tx*TS-cx,ty*TS-cy);
+  }
+  // encounter shimmer
+  usePal("uiwarn");
+  for(const e of (ENCOUNTERS[S.map]||[])){
+    if(S.cleared[e.f])continue;
+    const sx=e.x*TS-cx, sy=e.y*TS-cy;
+    const ph=(S.tick>>4)%4;
+    if(ph<2){ rect(sx+6,sy+6,4,4,3); rect(sx+7,sy+7,2,2,2); }
+    else { rect(sx+7,sy+7,2,2,3); }
+  }
+  const drawables=[];
+  for(const n of (NPCS[S.map]||[])) drawables.push({y:n.y*TS,f:()=>{
+    const a=CH[n.spr][0]; drawSprite(a,n.x*TS-cx,n.y*TS-cy,false,n.spr);
+  }});
+  drawables.push({y:S.ty*TS+S.oy+1,f:()=>{
+    let set,flip=false;
+    if(S.dir==="down")set=CH.pdown; else if(S.dir==="up")set=CH.pup;
+    else {set=CH.pside; flip=(S.dir==="left");}
+    drawSprite(set[S.anim],S.tx*TS+S.ox-cx,S.ty*TS+S.oy-cy,flip,"hero");
+  }});
+  drawables.sort((a,b)=>a.y-b.y).forEach(d=>d.f());
+
+  if(S.noticeT>0){
+    usePal("ui");
+    const t=mp().name, w=textw(t)+12;
+    rect(4,4,w,14,0); frame(4,4,w,14,2); text(t,10,7,3);
+    S.noticeT--;
+  }
+}
+
+/* ══ PARTY / REGISTER ═══════════════════════════════════════════════ */
+function addControl(id){
+  const c=CONTROLS[id];
+  S.party.push({id,name:c.name,type:c.type,lvl:1,hp:c.hp,max:c.hp,atk:c.atk,
+    moves:c.moves.slice(),xp:0});
+}
+function alive(){ return S.party.filter(p=>p.hp>0); }
+function rating(n){ return n>=15?"CRITICAL":n>=10?"HIGH":n>=5?"MODERATE":"LOW"; }
+function today(){ const d=new Date(); d.setDate(d.getDate()+S.day-1); return d.toISOString().slice(0,10); }
+function dueIn(days){ const d=new Date(); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10); }
+
+function logFinding(fid,evCount,treatment){
+  const f=FINDINGS[fid];
+  const inherent=f.lik*f.imp;
+  const reduction=Math.min(0.75,evCount*0.18);
+  const residual=(treatment==="ACCEPTED")?inherent:Math.max(1,Math.round(inherent*(1-reduction)));
+  const entry={
+    id:"R-"+String(S.register.length+1).padStart(3,"0"),
+    finding:f.name, cis:f.cis, csf:f.csf,
+    lik:f.lik, imp:f.imp, inherent, residual,
+    treatment, owner:"IT Operations", opened:today(), due:dueIn(30),
+    status:(treatment==="ACCEPTED")?"Accepted":"Remediation in progress",
+    fix:f.fix, evidence:f.ev, evCount
+  };
+  S.register.push(entry);
+  S.evidence.push({name:f.ev,ctrl:f.cis,date:today(),age:0});
+  S.cleared[fid]=true;
+  return entry;
+}
+
+/* ══ BATTLE ═════════════════════════════════════════════════════════ */
+function startBattle(fid){
+  if(!S.party.length){ say([["","You have no CONTROLS. Talk to DEV at the desk\nfloor first."]]); return; }
+  const f=FINDINGS[fid];
+  const act=alive()[0];
+  S.battle={fid,f,hp:f.hp,max:f.hp,atk:f.atk,ev:0,me:act,
+    phase:"intro",menu:0,log:[],shake:0,flash:0,turn:0};
+  S.scene="battle"; clearPressed();
+  music(f.boss?"boss":"battle");
+  bmsg("A wild "+f.name+" appeared! "+f.intro);
+}
+function bmsg(t,then){ const b=S.battle; b.text=t; b.ch=0; b.tdone=false; b.then=then||null; b.phase="msg"; }
+
+function dmgCalc(mv,me,b){
+  const M=MOVES[mv]; let d=M.pow;
+  const weakHit=(me.type===b.f.weak);
+  if(M.kind==="test") d=M.pow+b.ev*5;
+  if(M.kind==="attest") d=(b.ev>=3)?M.pow+8:Math.max(2,Math.round(M.pow/3));
+  if(M.kind==="document") d=M.pow;
+  if(M.kind==="evidence") d=M.pow;
+  d=Math.round(d*(1+(me.lvl-1)*0.15));
+  if(weakHit&&(M.kind==="test"||M.kind==="remediate"||M.kind==="attest")) d=Math.round(d*2);
+  return {d,weakHit};
+}
+
+function doMove(mv){
+  const b=S.battle, me=b.me, M=MOVES[mv];
+  if(M.kind==="remediate"&&S.budget<M.cost){
+    bmsg("Not enough budget. Remediation costs "+M.cost+".",()=>b.phase="menu"); return;
+  }
+  let lines=[];
+  if(M.kind==="remediate") S.budget-=M.cost;
+  if(M.kind==="evidence"){ b.ev++; }
+  const {d,weakHit}=dmgCalc(mv,me,b);
+  b.hp=Math.max(0,b.hp-d);
+  b.flash=8;
+  sfx(M.kind==="evidence"?"collect":(weakHit?"crit":"hit"));
+  if(M.kind==="evidence") lines.push(me.name+" collected evidence. Evidence on hand: "+b.ev);
+  else if(M.kind==="test") lines.push(me.name+" tested the control. "+(b.ev===0?"No evidence. Weak result.":"Evidence backed it up."));
+  else if(M.kind==="attest") lines.push(b.ev>=3?me.name+" attested. It held.":me.name+" attested with thin evidence. It did not hold.");
+  else if(M.kind==="remediate") lines.push(me.name+" remediated the gap. Budget left: "+S.budget);
+  else if(M.kind==="document"){ b.atk=Math.max(3,b.atk-2); lines.push(me.name+" wrote policy. "+b.f.name+" hits softer now."); }
+  if(weakHit&&M.kind!=="evidence"&&M.kind!=="document") lines.push("The right control for the job.");
+
+  bmsg(lines.join(" "),()=>{
+    if(b.hp<=0){ winBattle(); return; }
+    enemyTurn();
+  });
+}
+function enemyTurn(){
+  const b=S.battle, me=b.me;
+  const d=Math.max(1,Math.round(b.atk*(0.8+Math.random()*0.5)));
+  me.hp=Math.max(0,me.hp-d);
+  b.shake=10;
+  sfx("hurt");
+  bmsg(b.f.name+" exploits the gap! "+me.name+" took "+d+" damage.",()=>{
+    if(me.hp<=0){
+      const rest=alive();
+      if(rest.length){ sfx("faint"); b.me=rest[0]; bmsg(me.name+" is overwhelmed. "+rest[0].name+" steps up!",()=>b.phase="menu"); }
+      else loseBattle();
+    } else b.phase="menu";
+  });
+}
+function winBattle(){
+  const b=S.battle;
+  b.me.xp+=10; 
+  let lvlup=false;
+  if(b.me.xp>=20*b.me.lvl){ b.me.lvl++; b.me.max+=6; b.me.hp=b.me.max; b.me.atk+=2; lvlup=true; setTimeout(()=>sfx("levelup"),700); }
+  const entry=logFinding(b.fid,b.ev,"MITIGATED");
+  musicThen("win","world"); sfx("logged");
+  S.budget=Math.min(12,S.budget+2);
+  const msg=[
+    b.f.name+" was logged. RISK "+entry.id+" opened.",
+    "Inherent "+entry.inherent+" ("+rating(entry.inherent)+") Residual "+entry.residual+" ("+rating(entry.residual)+") Evidence items: "+b.ev,
+    (b.ev===0?"You logged it with zero evidence. An auditor will\nreopen this.":"Evidence filed under CIS "+b.f.cis+"."),
+    (lvlup?b.me.name+" reached maturity "+b.me.lvl+"!":"Budget +2.")
+  ];
+  b.phase="msg"; b.queue=msg.slice(1); bmsg(msg[0],()=>nextWinMsg());
+}
+function nextWinMsg(){
+  const b=S.battle;
+  if(b.queue&&b.queue.length){ bmsg(b.queue.shift(),()=>nextWinMsg()); return; }
+  const fid=b.fid;
+  S.battle=null; S.scene="world"; save();
+  beat(fid,()=>afterBeat(fid));
+  return;
+}
+function afterBeat(fid){
+  if(S.cleared.SHAREDPASS&&S.cleared.NOLOGS&&S.cleared.STALEACCT&&!S.flags.mid){
+    S.flags.mid=true;
+    say([["MARGIT","Three logged. Queue's down to twelve."],["MARGIT","Now go kill the thing making the tickets. Terminal, desk\nfloor."]]);
+  }
+}
+function loseBattle(){
+  const b=S.battle;
+  sfx("faint"); music("world");
+  bmsg("The finding stands. You withdraw to write it up.",()=>{
+    S.party.forEach(p=>p.hp=Math.max(1,Math.round(p.max*0.5)));
+    S.battle=null; S.scene="world"; S.day++;
+    say([["","You take the loss and go home. The finding is still open."],
+         ["","Tip: COLLECT evidence before you TEST. Damage scales with\nwhat you can prove."]]);
+  });
+}
+
+function bar(x,y,w,cur,max,pal){
+  const r=Math.max(0,cur/max), fill=Math.max(0,Math.round(r*(w-2)));
+  usePal("ui"); frame(x,y,w,6,2); rect(x+1,y+1,w-2,4,0);
+  usePal(pal||(r<0.3?"uibad":r<0.55?"uiwarn":"uigood"));
+  rect(x+1,y+1,fill,4,2);
+  rect(x+1,y+1,fill,1,3);
+  if(r<0.3&&(S.tick>>3)%2===0) rect(x+1,y+1,fill,4,3);
+}
+const TSHORT={ACCESS:"ACC",DETECT:"DET",HARDEN:"HRD",RECOVER:"RCV",GOVERN:"GOV"};
+function drawBattle(){
+  const b=S.battle;
+  // layered sky backdrop
+  clear(1,"sky");
+  usePal("sky");
+  for(let y=0;y<72;y++){ const t=y/72; rect(0,y,W,1, t<0.33?3:(t<0.66?2:1)); }
+  for(let y=72;y<92;y++) rect(0,y,W,1,0);
+  usePal("floor");
+  for(let y=72;y<92;y++) rect(0,y,W,1, y<76?2:1);
+  // platforms
+  usePal("plant");
+  for(let i=0;i<30;i++){ const d=Math.abs(i-15); rect(111+i,44-((d<10)?1:0),1,2,2); }
+  usePal("desk");
+  for(let i=0;i<38;i++){ rect(10+i,88,1,2,2); }
+
+  const fl=(b.flash>0&&(S.tick>>1)%2===0);
+  const sh=(b.shake>0)?((S.tick%2)?2:-2):0;
+  if(!fl) drawMon(b.fid,112,12,2);
+  drawMon(b.me.id,14+sh,56,2);
+
+  drawBox(2,6,92,30,"ui"); usePal("ui");
+  text(b.f.name,7,10,3);
+  text("CIS "+b.f.cis,7,19,2);
+  if(b.ev>0){ usePal("uiwarn"); text("WK:"+TSHORT[b.f.weak],52,19,3); }
+  bar(7,27,80,b.hp,b.max,"uibad");
+
+  drawBox(66,58,92,34,"ui"); usePal("ui");
+  text(b.me.name,71,62,3);
+  text("M"+b.me.lvl,140,62,2);
+  bar(71,72,76,b.me.hp,b.me.max,"uigood");
+  usePal("ui"); text(b.me.hp+"/"+b.me.max,71,82,2);
+  usePal("DETECT"); text("EV"+b.ev,110,82,3);
+  usePal("ACCESS"); text("B"+S.budget,136,82,3);
+
+  if(b.phase==="menu"){
+    drawBox(0,92,160,52,"ui"); usePal("ui");
+    for(let i=0;i<4;i++){
+      const mv=b.me.moves[i]; if(!mv)continue;
+      const x=(i%2)?86:10, y=(i<2)?99:111;
+      if(i===b.menu){ usePal("uiwarn"); text(">",x-6,y,3); usePal("ui"); }
+      text(MOVES[mv].name,x,y,3);
+    }
+    usePal("ui"); rect(6,118,148,1,1);
+    const mv=b.me.moves[b.menu];
+    if(mv) wrap(MOVES[mv].blurb,25).slice(0,2).forEach((ln,i)=>text(ln,6,122+i*9,2));
+  } else {
+    drawBox(0,92,160,52,"ui"); usePal("ui");
+    const lines=wrap(b.text,23).slice(0,3);
+    let shown=b.ch,y=100;
+    for(const ln of lines){ text(ln.substring(0,Math.max(0,shown)),8,y,3); shown-=ln.length; y+=12; if(shown<=0)break; }
+    if(b.tdone&&(S.tick>>4)%2===0){ usePal("uiwarn"); rect(149,133,4,3,3); rect(150,136,2,1,3); }
+  }
+  if(b.shake>0)b.shake--;
+  if(b.flash>0)b.flash--;
+}
+function updBattle(){
+  const b=S.battle;
+  if(b.phase==="msg"){
+    const total=wrap(b.text,23).slice(0,3).join("").length;
+    if(!b.tdone){ const p=b.ch; b.ch+=keys.ok?3:1; if(b.ch>p) sfx("text"); if(b.ch>=total){b.ch=total;b.tdone=true;} }
+    else if(hit("ok")||hit("back")){ sfx("page"); const t=b.then; b.then=null; if(t)t(); else b.phase="menu"; }
+    return;
+  }
+  if(b.phase==="intro"){ b.phase="menu"; return; }
+  const m0=b.menu;
+  if(hit("up"))b.menu=(b.menu+3)%4;
+  if(hit("down"))b.menu=(b.menu+1)%4;
+  if(hit("left"))b.menu=(b.menu+3)%4;
+  if(hit("right"))b.menu=(b.menu+1)%4;
+  if(b.menu>=b.me.moves.length)b.menu=0;
+  if(b.menu!==m0) sfx("cursor");
+  if(hit("ok")){ sfx("confirm"); doMove(b.me.moves[b.menu]); }
+}
+
+/* ══ MENUS ══════════════════════════════════════════════════════════ */
+const MENU=["MAP","JOURNAL","REGISTER","CONTROLS","EVIDENCE","EXPORT","STATUS","SAVE","CLOSE"];
+function updMenu(){
+  if(hit("back")||hit("menu")){ sfx("cancel"); S.scene="world"; return; }
+  const m0=S.menuIdx;
+  if(hit("up"))S.menuIdx=(S.menuIdx+MENU.length-1)%MENU.length;
+  if(hit("down"))S.menuIdx=(S.menuIdx+1)%MENU.length;
+  if(S.menuIdx!==m0) sfx("cursor");
+  if(hit("ok")){ sfx("confirm");
+    const m=MENU[S.menuIdx];
+    if(m==="CLOSE"){S.scene="world";}
+    else if(m==="SAVE"){ save(); say([["","Progress saved."]]); }
+    else if(m==="EXPORT"){ doExport(); }
+    else if(m==="MAP"){ S.mapFrom="menu"; S.scene="map"; }
+    else if(m==="JOURNAL"){ S.scene="journal"; S.subIdx=0; }
+    else if(m==="REGISTER"){ S.scene="register"; S.subIdx=0; S.scroll=0; }
+    else if(m==="CONTROLS"){ S.scene="controls"; S.subIdx=0; }
+    else if(m==="EVIDENCE"){ S.scene="evidence"; S.scroll=0; }
+    else if(m==="STATUS"){ S.scene="status"; }
+  }
+}
+function drawMenu(){
+  drawWorld();
+  const w=78,x=W-w-4;
+  drawBox(x,4,w,MENU.length*11+10,"ui");
+  MENU.forEach((m,i)=>{
+    const y=10+i*11;
+    if(i===S.menuIdx){ usePal("uiwarn"); rect(x+3,y-2,w-6,11,0); text(">",x+4,y,3); }
+    usePal("ui"); text(m,x+12,y,i===S.menuIdx?3:2);
+  });
+}
+
+function drawList(title,rows,idx,scroll,perPage){
+  clear(0,"ui"); usePal("ui");
+  rect(0,0,W,12,1); usePal("uiwarn"); text(title,4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  if(!rows.length){ text("Nothing here yet.",8,30,2); return; }
+  const start=scroll, end=Math.min(rows.length,start+perPage);
+  for(let i=start;i<end;i++){
+    const y=18+(i-start)*13;
+    if(i===idx){ usePal("uiwarn"); rect(2,y-2,156,12,1); text(">",4,y,3); }
+    usePal("ui"); text(rows[i],11,y,i===idx?3:2);
+  }
+  usePal("ui"); rect(0,128,W,16,1); text((idx+1)+" of "+rows.length+"   Z: detail",4,133,3);
+}
+
+const FLOORS=[
+  {tag:"09",name:"Conference Rm A",act:5,sub:"The Audit"},
+  {tag:"07",name:"Policy Wing",act:4,sub:"The Framework"},
+  {tag:"04",name:"us-west-2",act:3,sub:"The Cloud"},
+  {tag:"01",name:"Directory Floor",act:2,sub:"The Domain"},
+  {tag:"S2",name:"Ticket Desk",act:1,sub:"The Helpdesk",map:"helpdesk"},
+  {tag:"S2",name:"Server Closet B",act:1,sub:"The Helpdesk",map:"closet"}
+];
+function updMap(){ if(hit("back")||hit("map")||hit("ok")){ sfx("cancel"); S.scene=S.mapFrom||"world"; } }
+function drawMap(){
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text("MERIDIAN LOGISTICS",4,3,3);
+  usePal("ui"); text("M:back",120,3,2);
+
+  // lift shaft running the height of the building
+  usePal("metal"); rect(20,16,7,112,1); rect(22,16,3,112,0);
+  FLOORS.forEach((f,i)=>{
+    const y=17+i*19, here=(f.act===S.act && f.map===S.map);
+    const open=(f.act<=S.act);
+    usePal(open?(here?"uiwarn":"ui"):"void");
+    rect(2,y,16,15,here?1:0);
+    frame(2,y,16,15,2);
+    text(f.tag,4,y+4,3);
+    // shaft stop marker
+    usePal(open?"ACCESS":"void"); rect(21,y+6,5,3,open?3:1);
+    usePal(open?"ui":"void");
+    rect(30,y,126,15,here?1:0);
+    if(here){ usePal("uiwarn"); rect(30,y,126,15,1); }
+    usePal(open?"ui":"void");
+    text(f.name,34,y+2,open?3:1);
+    usePal(open?(here?"uiwarn":"DETECT"):"void");
+    text("Act "+f.act+"  "+f.sub,34,y+9,open?3:1);
+    if(!open){ usePal("void"); text("[",146,y+4,3); text("]",151,y+4,3); rect(148,y+6,3,4,3); }
+    if(here&&(S.tick>>4)%2===0){ usePal("uiwarn"); text(">",28,y+4,3); }
+  });
+  usePal("ui"); rect(0,130,W,14,1);
+  const opened=FLOORS.filter(f=>f.act<=S.act).length;
+  text("Floors open: "+opened+" of "+FLOORS.length,4,134,3);
+}
+function updJournal(){
+  const n=S.journal.length;
+  if(hit("back")){ S.scene="menu"; return; }
+  if(hit("up")&&S.subIdx>0)S.subIdx--;
+  if(hit("down")&&S.subIdx<n-1)S.subIdx++;
+}
+function drawJournal(){
+  const ent=JOURNAL.filter(j=>S.journal.includes(j.key));
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text("JOURNAL",4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  if(!ent.length){ text("Nothing recorded yet.",8,30,2); return; }
+  if(S.subIdx>=ent.length)S.subIdx=ent.length-1;
+  const e=ent[S.subIdx];
+  usePal("uiwarn"); rect(4,16,152,13,1); text(e.t,8,19,3);
+  usePal("ui");
+  wrap(e.b,24).slice(0,8).forEach((ln,i)=>text(ln,8,36+i*11,3));
+  usePal("ui"); rect(0,128,W,16,1);
+  text((S.subIdx+1)+" of "+ent.length+"   UP/DOWN",4,133,3);
+}
+function updRegister(){
+  if(hit("back")){ S.scene="menu"; return; }
+  if(!S.register.length) return;
+  if(hit("up")&&S.subIdx>0)S.subIdx--;
+  if(hit("down")&&S.subIdx<S.register.length-1)S.subIdx++;
+  const per=8;
+  if(S.subIdx<S.scroll)S.scroll=S.subIdx;
+  if(S.subIdx>=S.scroll+per)S.scroll=S.subIdx-per+1;
+  if(hit("ok")&&S.register.length) S.scene="regdetail";
+}
+function drawRegister(){
+  const rows=S.register.map(r=>r.id+" "+r.finding.substring(0,11).padEnd(11," ")+rating(r.residual).substring(0,4));
+  drawList("RISK REGISTER",rows,S.subIdx,S.scroll,8);
+}
+function updRegDetail(){ if(hit("back")||hit("ok")) S.scene="register"; }
+function drawRegDetail(){
+  const r=S.register[S.subIdx]; clear(0,"ui"); usePal("ui");
+  rect(0,0,W,12,1); usePal("uiwarn"); text(r.id+"  "+r.finding,4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  let y=17;
+  const L=(k,v,p)=>{ usePal("ui"); text(k,4,y,2); usePal(p||"ui"); text(v,72,y,3); y+=11; };
+  L("CIS v8",r.cis);
+  L("NIST CSF",r.csf);
+  L("Likelihood",r.lik+" / 5");
+  L("Impact",r.imp+" / 5");
+  L("Inherent",r.inherent+" "+rating(r.inherent),ratePal(r.inherent));
+  L("Residual",r.residual+" "+rating(r.residual),ratePal(r.residual));
+  L("Treatment",r.treatment);
+  L("Owner",r.owner);
+  L("Due",r.due);
+  usePal(r.evCount?"uigood":"uibad"); rect(0,126,W,18,1);
+  text("Evidence on file: "+r.evCount,4,131,3);
+}
+function updControls(){
+  if(hit("back")){ S.scene="menu"; return; }
+  if(!S.party.length) return;
+  if(hit("up")&&S.subIdx>0)S.subIdx--;
+  if(hit("down")&&S.subIdx<S.party.length-1)S.subIdx++;
+}
+function drawControls(){
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text("YOUR CONTROLS",4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  if(!S.party.length){ text("Empty. Talk to DEV.",8,30,2); return; }
+  S.party.forEach((p,i)=>{
+    const y=15+i*22;
+    if(i===S.subIdx){ usePal("uiwarn"); rect(0,y-3,W,22,1); text(">",2,y+3,3); }
+    usePal("ui"); text(p.name,9,y,3);
+    usePal(p.type); text(p.type,9,y+9,3);
+    bar(92,y+1,60,p.hp,p.max);
+    usePal("ui"); text(p.hp+"/"+p.max,92,y+10,2); text("M"+p.lvl,134,y+10,3);
+  });
+  const p=S.party[S.subIdx];
+  usePal(p.type); rect(0,126,W,18,1);
+  text("CIS "+CONTROLS[p.id].cis.join(" ")+"   "+CONTROLS[p.id].csf,4,131,3);
+}
+function updEvidence(){
+  if(hit("back")){ S.scene="menu"; return; }
+  if(hit("up")&&S.scroll>0)S.scroll--;
+  if(hit("down")&&S.scroll<Math.max(0,S.evidence.length-7))S.scroll++;
+}
+function drawEvidence(){
+  clear(3); rect(0,0,W,12,0); text("EVIDENCE BAG",4,3,3); text("X:back",118,3,2);
+  if(!S.evidence.length){ text("No artifacts yet.",8,30,1); text("X: back",8,44,1); return; }
+  for(let i=S.scroll;i<Math.min(S.evidence.length,S.scroll+4);i++){
+    const e=S.evidence[i], y=15+(i-S.scroll)*27;
+    wrap(e.name,24).slice(0,2).forEach((ln,k)=>text(ln,6,y+k*9,0));
+    text("CIS "+e.ctrl+"   "+e.date,6,y+18,1);
+  }
+  rect(0,126,W,18,0);
+  text("Ages out after 90 days.",4,131,3);
+}
+function updStatus(){ if(hit("back")||hit("ok")) S.scene="menu"; }
+function drawStatus(){
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text("STATUS",4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  const a=ACTS[S.act-1];
+  let y=18;
+  const L=(k,v)=>{ usePal("ui"); text(k,4,y,2); text(v,64,y,3); y+=12; };
+  L("Act",a.n+" "+a.name);
+  L("Where",a.sub);
+  usePal("ui"); text("Goal",4,y,2);
+  usePal("uiwarn"); wrap(a.goal,15).slice(0,2).forEach((ln,i)=>text(ln,64,y+i*10,3));
+  y+=26;
+  L("Findings",String(S.register.length));
+  L("Evidence",String(S.evidence.length));
+  L("Budget",String(S.budget));
+  usePal("uiwarn"); rect(0,126,W,18,1); text("Day "+S.day+" of 90",4,131,3);
+}
+/* ══ EXPORT — the part that makes this a portfolio piece ════════════ */
+function ratePal(n){ return n>=15?"uibad":n>=10?"uiwarn":n>=5?"ACCESS":"uigood"; }
+function csvEsc(s){ s=String(s); return /[", ]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
+function buildCSV(){
+  const NL=String.fromCharCode(13)+String.fromCharCode(10);
+  const head=["Risk ID","Finding","CIS v8 Safeguard","NIST CSF 2.0 Function","Likelihood (1-5)",
+    "Impact (1-5)","Inherent Score","Inherent Rating","Residual Score","Residual Rating",
+    "Treatment","Owner","Date Opened","Due Date","Status","Evidence Required","Evidence Count"];
+  const rows=S.register.map(r=>[r.id,r.finding,r.cis,r.csf,r.lik,r.imp,r.inherent,
+    rating(r.inherent),r.residual,rating(r.residual),r.treatment,r.owner,r.opened,r.due,
+    r.status,r.evidence,r.evCount]);
+  return [head,...rows].map(r=>r.map(csvEsc).join(",")).join(NL);
+}
+function buildPOAM(){
+  const N=String.fromCharCode(10), NN=N+N, BR="  "+N;
+  const d=new Date().toISOString().slice(0,10);
+  const L=[];
+  L.push("# Plan of Action and Milestones (POA&M)"+N);
+  L.push("**System:** Sublevel 2 Helpdesk Environment"+BR);
+  L.push("**Framework:** CIS Controls v8 (IG1) mapped to NIST CSF 2.0"+BR);
+  L.push("**Assessment date:** "+d+BR);
+  L.push("**Prepared by:** GRC Analyst (self-assessment)"+NN);
+  L.push("> Generated from CONTROL QUEST game state. Safeguard numbering must be"+N);
+  L.push("> verified against the published CIS Controls v8 document before use."+NN);
+  L.push("## Summary"+NN);
+  const crit=S.register.filter(r=>rating(r.residual)==="CRITICAL").length;
+  const high=S.register.filter(r=>rating(r.residual)==="HIGH").length;
+  const noEv=S.register.filter(r=>r.evCount===0).length;
+  L.push("- Findings identified: **"+S.register.length+"**"+N);
+  L.push("- Residual CRITICAL: **"+crit+"** / Residual HIGH: **"+high+"**"+N);
+  L.push("- Evidence artifacts on file: **"+S.evidence.length+"**"+N);
+  L.push("- Findings logged without evidence: **"+noEv+"**"+NN);
+  L.push("## Register"+NN);
+  L.push("| ID | Finding | CIS | CSF | Inherent | Residual | Due |"+N);
+  L.push("|---|---|---|---|---|---|---|"+N);
+  S.register.forEach(r=>{
+    L.push("| "+r.id+" | "+r.finding+" | "+r.cis+" | "+r.csf+" | "+r.inherent+" "+rating(r.inherent)+" | "+r.residual+" "+rating(r.residual)+" | "+r.due+" |"+N);
+  });
+  L.push(N+"## Open items"+NN);
+  S.register.forEach(r=>{
+    L.push("### "+r.id+" - "+r.finding+NN);
+    L.push("| Field | Value |"+N+"|---|---|"+N);
+    L.push("| CIS v8 safeguard | "+r.cis+" |"+N);
+    L.push("| NIST CSF 2.0 function | "+r.csf+" |"+N);
+    L.push("| Likelihood / Impact | "+r.lik+" / "+r.imp+" |"+N);
+    L.push("| Inherent risk | "+r.inherent+" ("+rating(r.inherent)+") |"+N);
+    L.push("| Residual risk | "+r.residual+" ("+rating(r.residual)+") |"+N);
+    L.push("| Treatment | "+r.treatment+" |"+N);
+    L.push("| Owner | "+r.owner+" |"+N);
+    L.push("| Opened | "+r.opened+" |"+N);
+    L.push("| Due | "+r.due+" |"+N);
+    L.push("| Status | "+r.status+" |"+NN);
+    L.push("**Remediation plan.** "+r.fix+NN);
+    L.push("**Evidence required.** "+r.evidence+NN);
+    if(r.evCount===0) L.push("> Logged without supporting evidence. Treat as unverified."+NN);
+  });
+  return L.join("");
+}
+function download(name,text){
+  try{
+    const b=new Blob([text],{type:"text/plain;charset=utf-8"});
+    const u=URL.createObjectURL(b);
+    const a=document.createElement("a"); a.href=u; a.download=name;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},2000);
+    return true;
+  }catch(e){ return false; }
+}
+function doExport(){
+  if(!S.register.length){ say([["","Nothing to export yet. Log a finding first."]]); return; }
+  const ok1=download("risk-register.csv",buildCSV());
+  const ok2=download("poam.md",buildPOAM());
+  S.scene="world";
+  if(ok1&&ok2) say([["EXPORT","risk-register.csv poam.md"],
+    ["EXPORT","Two real artifacts, built from what you actually proved.\nThat is the deliverable."]]);
+  else say([["EXPORT","Download blocked here. Open the file outside the\nsandbox to export."]]);
+}
+
+/* ══ TITLE ══════════════════════════════════════════════════════════ */
+function drawTitle(){
+  clear(0,"title"); usePal("title");
+  for(let y=0;y<H;y++){ const t=y/H; rect(0,y,W,1, t<0.30?1:(t<0.62?0:0)); }
+  // drifting starfield
+  usePal("sky");
+  for(let i=0;i<26;i++){
+    const x=(i*37+((S.tick>>3)*(1+i%3)))%W, y=(i*11)%50;
+    px(x,y, i%4?2:3);
+  }
+  usePal("ACCESS"); drawMon("MULTIFACTOR",8,10,2,"ACCESS");
+  drawMon("STALEACCT",120,10,2,"void");
+
+  usePal("title");
+  rect(0,52,W,26,0);
+  usePal("uiwarn");
+  ctext("CONTROL QUEST",58,3);
+  usePal("title"); rect(30,70,100,1,2);
+  usePal("ui"); ctext("COMPLIANCE VERSION",73,2);
+
+  usePal("uibad"); ctext("MERIDIAN LOGISTICS",88,3);
+  usePal("ui"); ctext("FAILED ITS AUDIT",98,2);
+  usePal("ui"); ctext("91 DAYS AGO",107,2);
+
+  if((S.tick>>4)%2===0){ usePal("uiwarn"); ctext("PRESS Z TO START",120,3); }
+  usePal("ui"); ctext("Prove it. Or don't.",133,2);
+}
+function updTitle(){
+  if(hit("ok")){
+    audioInit(); music("title");
+    if(S.flags.seenPrologue){ S.scene="world"; music("world"); return; }
+    S.flags.seenPrologue=true;
+    story(PROLOGUE.map(c=>({pal:c.pal,lines:c.lines})),()=>{
+      music("world");
+      say([["","Talk to DEV for your first CONTROL. Walk into the flashing tiles to find FINDINGS."],
+           ["","Press ENTER any time for your RISK REGISTER and JOURNAL."]]);
+    });
+  }
+}
+
+/* ══ LOOP ═══════════════════════════════════════════════════════════ */
+function update(){
+  S.tick++;
+  switch(S.scene){
+    case "title": updTitle(); break;
+    case "world": updWorld(); break;
+    case "dialog": updMsg(); break;
+    case "story": updStory(); break;
+    case "menu": updMenu(); break;
+    case "battle": updBattle(); break;
+    case "map": updMap(); break;
+    case "journal": updJournal(); break;
+    case "register": updRegister(); break;
+    case "regdetail": updRegDetail(); break;
+    case "controls": updControls(); break;
+    case "evidence": updEvidence(); break;
+    case "status": updStatus(); break;
+  }
+  clearPressed();
+}
+function draw(){
+  switch(S.scene){
+    case "title": drawTitle(); break;
+    case "world": drawWorld(); break;
+    case "dialog": drawWorld(); drawMsg(); break;
+    case "story": drawStory(); break;
+    case "menu": drawMenu(); break;
+    case "battle": drawBattle(); break;
+    case "map": drawMap(); break;
+    case "journal": drawJournal(); break;
+    case "register": drawRegister(); break;
+    case "regdetail": drawRegDetail(); break;
+    case "controls": drawControls(); break;
+    case "evidence": drawEvidence(); break;
+    case "status": drawStatus(); break;
+  }
+  flush();
+}
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+
+/* ── viewport: fill the window, letterboxed, integer scale where it fits ── */
+function fit(){
+  const pad = (matchMedia("(pointer:coarse)").matches) ? 8 : 24;
+  const availW = window.innerWidth - pad*2;
+  const availH = window.innerHeight - (matchMedia("(pointer:coarse)").matches ? 16 : 70);
+  const raw = Math.min(availW/W, availH/H);
+  const s = raw >= 2 ? Math.floor(raw) : Math.max(1, raw);
+  cvs.style.width = Math.round(W*s)+"px";
+  cvs.style.height = Math.round(H*s)+"px";
+}
+addEventListener("resize",fit); addEventListener("orientationchange",()=>setTimeout(fit,120)); fit();
+
+/* ── fullscreen + scanlines ── */
+const crtEl=document.getElementById("crt");
+function toggleCrt(){ crtEl.classList.toggle("off"); }
+function toggleFs(){
+  const el=document.documentElement;
+  if(!document.fullscreenElement){ (el.requestFullscreen||el.webkitRequestFullscreen||(()=>{})).call(el); }
+  else { (document.exitFullscreen||document.webkitExitFullscreen||(()=>{})).call(document); }
+  setTimeout(fit,180);
+}
+const btnSnd=document.getElementById("btnSnd");
+btnSnd.onclick=()=>{ audioInit(); btnSnd.textContent = audioToggle()? "SOUND ON":"SOUND OFF"; };
+document.getElementById("btnCrt").onclick=toggleCrt;
+document.getElementById("btnFs").onclick=toggleFs;
+document.addEventListener("fullscreenchange",()=>setTimeout(fit,180));
+addEventListener("keydown",e=>{
+  audioInit();
+  const k=e.key.toLowerCase();
+  if(k==="f"){ e.preventDefault(); toggleFs(); }
+  if(k==="c"){ e.preventDefault(); toggleCrt(); }
+});
+addEventListener("pointerdown",audioInit,{once:false});
+
+/* ── touch controls ── */
+(function(){
+  const held={};
+  document.querySelectorAll("#touch i").forEach(el=>{
+    const k=el.dataset.k;
+    const down=e=>{ e.preventDefault(); audioInit(); if(!keys[k])PRESSED[k]=true; keys[k]=true; held[k]=true; };
+    const up=e=>{ e.preventDefault(); keys[k]=false; held[k]=false; };
+    el.addEventListener("touchstart",down,{passive:false});
+    el.addEventListener("touchend",up,{passive:false});
+    el.addEventListener("touchcancel",up,{passive:false});
+    el.addEventListener("mousedown",down); el.addEventListener("mouseup",up);
+    el.addEventListener("mouseleave",up);
+  });
+})();
+
+(async()=>{ await load(); if(S.party.length) S.scene="world"; loop(); })();
+</script>
+</body>
+</html>
