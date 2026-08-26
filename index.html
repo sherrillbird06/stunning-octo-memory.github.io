@@ -1,0 +1,2316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>HELP DESK QUEST — Jaylen Sherrill, IT Support Portfolio</title>
+<meta name="description" content="Help Desk Quest: an interactive IT support portfolio by Jaylen Sherrill. Nashville, TN.">
+<style>
+  :root{
+    --ink:#e8ecf4; --dim:#7b8494; --edge:#1b1f27;
+    --bg0:#05070b; --bg1:#0c1119; --accent:#f0b429;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--bg0)}
+  body{
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    color:var(--ink);
+    display:flex;align-items:center;justify-content:center;
+    touch-action:none; -webkit-user-select:none; user-select:none;
+  }
+  #stage{
+    position:fixed; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 45%, #131a26 0%, #080b11 60%, #04060a 100%);
+  }
+  #wrap{ position:relative; line-height:0; }
+  canvas#screen{
+    display:block; image-rendering:pixelated;
+    box-shadow:0 0 60px rgba(90,140,220,.10), 0 0 140px rgba(40,70,130,.14),
+               0 18px 60px rgba(0,0,0,.7);
+    border-radius:3px;
+  }
+  /* CRT scanlines + phosphor bloom, toggleable */
+  #crt{
+    position:absolute; inset:0; pointer-events:none; border-radius:3px;
+    background:repeating-linear-gradient(to bottom,
+      rgba(0,0,0,.22) 0px, rgba(0,0,0,.22) 1px,
+      rgba(255,255,255,.015) 1px, rgba(255,255,255,.015) 3px);
+    mix-blend-mode:multiply; opacity:1; transition:opacity .2s;
+  }
+  #crt.off{opacity:0}
+  #vig{
+    position:absolute; inset:0; pointer-events:none; border-radius:3px;
+    background:radial-gradient(ellipse 92% 88% at 50% 50%,
+      rgba(0,0,0,0) 55%, rgba(0,0,0,.34) 100%);
+  }
+  /* top-right utility bar */
+  #bar{
+    position:fixed; top:10px; right:12px; display:flex; gap:6px; z-index:20;
+  }
+  #bar button{
+    font:inherit; font-size:10px; letter-spacing:.1em; color:var(--dim);
+    background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.09);
+    border-radius:5px; padding:6px 9px; cursor:pointer; transition:.15s;
+  }
+  #bar button:hover,#bar button:focus-visible{ color:var(--ink); border-color:rgba(255,255,255,.25); }
+  #bar button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  #keys{
+    position:fixed; bottom:9px; left:0; right:0; text-align:center;
+    font-size:9.5px; letter-spacing:.12em; color:#5a6270; z-index:20;
+  }
+  #keys b{color:#8f98a8;font-weight:400}
+  /* touch controls, shown only on coarse pointers */
+  #touch{ display:none; position:fixed; inset:0; z-index:15; pointer-events:none; }
+  #touch .pad,#touch .btns{ position:absolute; bottom:22px; pointer-events:auto; }
+  #touch .pad{ left:18px; width:132px; height:132px; }
+  #touch .btns{ right:18px; display:flex; gap:12px; align-items:flex-end; }
+  #touch i{
+    position:absolute; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.14);
+    color:#aeb6c4; font-style:normal; font-size:15px; border-radius:9px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #touch i:active{ background:rgba(240,180,41,.28); }
+  #touch .pad i{ width:44px; height:44px; }
+  #touch .u{left:44px;top:0} #touch .d{left:44px;top:88px}
+  #touch .l{left:0;top:44px} #touch .r{left:88px;top:44px}
+  #touch .btns i{ position:relative; width:54px; height:54px; border-radius:50%; font-size:13px; letter-spacing:.05em; }
+  #touch .mn{ width:44px;height:30px;border-radius:8px;font-size:9px; }
+  @media (pointer:coarse){ #touch{display:block} #keys{display:none} }
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important} }
+  #sheet{ position:fixed; inset:0; z-index:40; background:rgba(4,6,11,.86);
+    display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; padding:26px 14px 60px; }
+  #sheet[hidden]{display:none}
+  #sheetInner{ position:relative; width:min(760px,100%); background:#0f1420;
+    border:2px solid #2c3852; border-radius:8px; padding:26px 26px 34px;
+    box-shadow:0 30px 90px rgba(0,0,0,.7); }
+  #sheetInner h1{ font-size:22px; letter-spacing:.06em; color:#f2f6fc; }
+  #sheetInner .sub{ font-size:11px; letter-spacing:.22em; color:#f0b429; margin-top:5px; }
+  #sheetInner nav{ display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 6px; }
+  #sheetInner nav a{ font-size:11px; letter-spacing:.08em; color:#b6c2d6; text-decoration:none;
+    border:1px solid #2c3852; border-radius:5px; padding:7px 11px; transition:.15s; }
+  #sheetInner nav a:hover,#sheetInner nav a:focus-visible{ color:#0f1420; background:#f0b429; border-color:#f0b429; }
+  #sheetInner header{ border-bottom:1px solid #1e2738; padding-bottom:16px; margin-bottom:4px; }
+  #sheetClose{ position:absolute; top:16px; right:16px; font:inherit; font-size:10px; letter-spacing:.1em;
+    color:#7b8494; background:rgba(255,255,255,.05); border:1px solid #2c3852; border-radius:5px;
+    padding:7px 10px; cursor:pointer; }
+  #sheetClose:hover{ color:#f2f6fc; }
+  #sheetBody h2{ font-size:10px; letter-spacing:.26em; color:#f0b429; margin:26px 0 12px;
+    border-bottom:1px solid #1e2738; padding-bottom:7px; }
+  #sheetBody .row{ margin-bottom:18px; }
+  #sheetBody .rt{ font-size:13px; color:#e8ecf4; }
+  #sheetBody .rm{ font-size:11px; color:#7b8494; margin-top:3px; }
+  #sheetBody ul{ margin:9px 0 0 15px; }
+  #sheetBody li{ font-size:12px; line-height:1.65; color:#b6c2d6; margin-bottom:6px; }
+  #sheetBody p.lead{ font-size:12px; line-height:1.65; color:#b6c2d6; margin-top:6px; }
+  #sheetInner a:focus-visible,#sheetClose:focus-visible{ outline:2px solid #f0b429; outline-offset:2px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="wrap">
+    <canvas id="screen" width="160" height="144"></canvas>
+    <div id="crt"></div><div id="vig"></div>
+  </div>
+</div>
+<div id="bar">
+  <button id="btnResume" title="Resume and contact">RESUME</button>
+  <button id="btnSnd" title="Toggle sound">SOUND: OFF</button>
+  <button id="btnCrt" title="Toggle scanlines">SCANLINES</button>
+  <button id="btnFs" title="Fullscreen">FULLSCREEN</button>
+</div>
+<div id="keys"><b>WASD/ARROWS</b> move &nbsp;·&nbsp; <b>Z</b> confirm &nbsp;·&nbsp; <b>X</b> back &nbsp;·&nbsp; <b>ENTER</b> menu &nbsp;·&nbsp; <b>M</b> map &nbsp;·&nbsp; <b>R</b> resume &nbsp;·&nbsp; <b>F</b> fullscreen</div>
+<div id="touch">
+  <div class="pad"><i class="u" data-k="up">▲</i><i class="d" data-k="down">▼</i><i class="l" data-k="left">◀</i><i class="r" data-k="right">▶</i></div>
+  <div class="btns"><i class="mn" data-k="map">MAP</i><i class="mn" data-k="menu">MENU</i><i data-k="back">B</i><i data-k="ok">A</i></div>
+</div>
+<div id="sheet" hidden>
+  <div id="sheetInner" role="dialog" aria-modal="true" aria-label="Resume and contact">
+    <button id="sheetClose" aria-label="Close">CLOSE &#10005;</button>
+    <header>
+      <h1>JAYLEN SHERRILL</h1>
+      <p class="sub">IT SUPPORT &middot; NASHVILLE, TN</p>
+      <nav>
+        <a href="https://www.linkedin.com/in/jaylen-sherrill-b91636327/" target="_blank" rel="noopener">LINKEDIN &#8599;</a>
+        <a href="mailto:jaylenbaylen@icloud.com">jaylenbaylen@icloud.com</a>
+        <a href="tel:+16159109432">615-910-9432</a>
+      </nav>
+    </header>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════
+   CONTROL QUEST — a GRC training RPG in the shape of a 1996 handheld.
+   Original characters and world. Style homage only.
+   ══════════════════════════════════════════════════════════════════ */
+
+const W=160,H=144,TS=16;
+const cvs=document.getElementById("screen"), ctx=cvs.getContext("2d");
+ctx.imageSmoothingEnabled=false;
+
+/* ══ PALETTE BANKS ═══════════════════════════════════════════════════
+   Art is drawn with 4 indices (0 darkest .. 3 lightest), exactly like
+   the DMG. Each draw call selects a bank, which maps those 4 indices to
+   real colours. This is how the Game Boy Color did it, and it means the
+   whole tile and sprite library gets colour with no repainting.
+   ═══════════════════════════════════════════════════════════════════ */
+const BANK={};
+let _pi=0;
+function bank(name,c0,c1,c2,c3){ BANK[name]=_pi++; PALS.push([c0,c1,c2,c3]); return BANK[name]; }
+const PALS=[];
+
+/* environment */
+bank("floor",  "#1b2436","#2c3a56","#46597e","#5d7299");
+bank("carpet", "#2a1f3a","#3d2f52","#54426e","#6b558a");
+bank("wall",   "#151b28","#232c3f","#33405a","#46567a");
+bank("desk",   "#241a12","#3d2a1a","#6b4a2c","#9c7043");
+bank("metal",  "#12171f","#232b38","#3c4757","#5a6779");
+bank("plant",  "#0f2416","#1a4227","#2c6b3c","#46a05a");
+bank("screen", "#04140c","#0a3d22","#18a35a","#4ff08c");
+bank("door",   "#1a1208","#3a2a10","#6b4f1c","#a8802e");
+bank("paper",  "#2a241a","#5c5140","#a89878","#e8dcc0");
+/* characters */
+bank("hero",   "#1a1020","#8c2f3a","#e0644f","#f4d9b0");
+bank("npcA",   "#141c26","#2f5c7a","#4f9ec4","#cfe8f4");
+bank("npcB",   "#1c1424","#5c3a72","#9c6ab8","#e4d0f0");
+bank("npcC",   "#0f1a14","#2a5c42","#4aa070","#d0f0dc");
+/* skill + ticket types */
+bank("PEOPLE",  "#2a1a06","#7a4a12","#d18a24","#ffd48a");
+bank("HARDWARE","#0e1826","#25405e","#4a7aa8","#a8d0f0");
+bank("SOFTWARE","#1c1030","#48286e","#8050bc","#d4b0f8");
+bank("NETWORK", "#04222a","#0f5c6e","#22a8b8","#8ae8f4");
+bank("SECURITY","#2a0812","#7a1428","#cc3450","#ff9aae");
+/* control types */
+bank("ACCESS", "#2a1c04","#7a5410","#d99b1e","#ffe08a");
+bank("DETECT", "#04202a","#0f5c72","#26a8c4","#96eaf8");
+bank("HARDEN", "#101a2c","#2a4472","#4f7cc0","#b4d2f8");
+bank("RECOVER","#0a2416","#1c5c38","#34a866","#a4f0c0");
+bank("GOVERN", "#1e1030","#472a72","#7a54b8","#cfb0f8");
+/* findings: hostile reds and sickly greens */
+bank("threat", "#2a0810","#7a1424","#c43048","#f88098");
+bank("rot",    "#141c08","#3a4a12","#6e8c22","#b8d454");
+bank("void",   "#0e1018","#2e3050","#5c6090","#a8b0e0");
+bank("boss",   "#2a0604","#8a1408","#d84418","#ffa050");
+/* UI */
+bank("ui",     "#10151f","#33405a","#c8d4e6","#f2f6fc");
+bank("uiwarn", "#2a1004","#7a3008","#e08830","#ffe0b0");
+bank("uibad",  "#2a0610","#7a1030","#d43860","#ffb0c8");
+bank("uigood", "#04220f","#0f6030","#2eae5e","#a8f0c0");
+bank("title",  "#0a0812","#2a1c48","#6a4ab0","#f0e0ff");
+bank("sky",    "#0a1020","#1c2c50","#38508c","#6a86c8");
+
+let curPal=BANK.ui;
+function usePal(p){ curPal=(typeof p==="string")?BANK[p]:p; }
+
+const img=ctx.createImageData(W,H);
+const buf=new Uint8Array(W*H);   // (palette<<2)|colorIndex
+
+function clear(c,p){ buf.fill((((p===undefined?curPal:(typeof p==="string"?BANK[p]:p)))<<2)|c); }
+function px(x,y,c){ x|=0; y|=0; if(x<0||y<0||x>=W||y>=H)return; buf[y*W+x]=(curPal<<2)|c; }
+function rect(x,y,w,h,c){ for(let j=0;j<h;j++)for(let i=0;i<w;i++)px(x+i,y+j,c); }
+function frame(x,y,w,h,c){ rect(x,y,w,1,c);rect(x,y+h-1,w,1,c);rect(x,y,1,h,c);rect(x+w-1,y,1,h,c); }
+
+const RGB=[];
+function bakePalettes(){
+  RGB.length=0;
+  for(const p of PALS){
+    const row=[];
+    for(const hex of p) row.push([parseInt(hex.substr(1,2),16),
+                                  parseInt(hex.substr(3,2),16),
+                                  parseInt(hex.substr(5,2),16)]);
+    RGB.push(row);
+  }
+}
+function flush(){
+  if(!RGB.length) bakePalettes();
+  const d=img.data;
+  for(let i=0;i<buf.length;i++){
+    const b=buf[i], c=RGB[b>>2][b&3], o=i*4;
+    d[o]=c[0]; d[o+1]=c[1]; d[o+2]=c[2]; d[o+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+}
+
+/* ── Bitmap font: 5x7 glyphs in an 8x8 cell ─────────────────────── */
+const F={};
+function G(ch,rows){ F[ch]=rows; }
+G(" ",["     ","     ","     ","     ","     ","     ","     "]);
+G("A",[" ### ","#   #","#   #","#####","#   #","#   #","#   #"]);
+G("B",["#### ","#   #","#### ","#   #","#   #","#   #","#### "]);
+G("C",[" ### ","#   #","#    ","#    ","#    ","#   #"," ### "]);
+G("D",["#### ","#   #","#   #","#   #","#   #","#   #","#### "]);
+G("E",["#####","#    ","#### ","#    ","#    ","#    ","#####"]);
+G("F",["#####","#    ","#### ","#    ","#    ","#    ","#    "]);
+G("G",[" ### ","#   #","#    ","#  ##","#   #","#   #"," ### "]);
+G("H",["#   #","#   #","#####","#   #","#   #","#   #","#   #"]);
+G("I",[" ### ","  #  ","  #  ","  #  ","  #  ","  #  "," ### "]);
+G("J",["    #","    #","    #","    #","#   #","#   #"," ### "]);
+G("K",["#   #","#  # ","# #  ","##   ","# #  ","#  # ","#   #"]);
+G("L",["#    ","#    ","#    ","#    ","#    ","#    ","#####"]);
+G("M",["#   #","## ##","# # #","#   #","#   #","#   #","#   #"]);
+G("N",["#   #","##  #","# # #","#  ##","#   #","#   #","#   #"]);
+G("O",[" ### ","#   #","#   #","#   #","#   #","#   #"," ### "]);
+G("P",["#### ","#   #","#   #","#### ","#    ","#    ","#    "]);
+G("Q",[" ### ","#   #","#   #","#   #","# # #","#  # "," ## #"]);
+G("R",["#### ","#   #","#   #","#### ","# #  ","#  # ","#   #"]);
+G("S",[" ####","#    ","#    "," ### ","    #","    #","#### "]);
+G("T",["#####","  #  ","  #  ","  #  ","  #  ","  #  ","  #  "]);
+G("U",["#   #","#   #","#   #","#   #","#   #","#   #"," ### "]);
+G("V",["#   #","#   #","#   #","#   #","#   #"," # # ","  #  "]);
+G("W",["#   #","#   #","#   #","# # #","# # #","## ##","#   #"]);
+G("X",["#   #","#   #"," # # ","  #  "," # # ","#   #","#   #"]);
+G("Y",["#   #","#   #"," # # ","  #  ","  #  ","  #  ","  #  "]);
+G("Z",["#####","    #","   # ","  #  "," #   ","#    ","#####"]);
+G("a",["     ","     "," ### ","    #"," ####","#   #"," ####"]);
+G("b",["#    ","#    ","#### ","#   #","#   #","#   #","#### "]);
+G("c",["     ","     "," ####","#    ","#    ","#    "," ####"]);
+G("d",["    #","    #"," ####","#   #","#   #","#   #"," ####"]);
+G("e",["     ","     "," ### ","#   #","#####","#    "," ####"]);
+G("f",["  ## "," #   "," #   ","#### "," #   "," #   "," #   "]);
+G("g",["     "," ####","#   #","#   #"," ####","    #"," ### "]);
+G("h",["#    ","#    ","#### ","#   #","#   #","#   #","#   #"]);
+G("i",["  #  ","     "," ##  ","  #  ","  #  ","  #  "," ### "]);
+G("j",["   # ","     ","  ## ","   # ","   # ","#  # "," ##  "]);
+G("k",["#    ","#    ","#  # ","# #  ","##   ","# #  ","#  # "]);
+G("l",[" ##  ","  #  ","  #  ","  #  ","  #  ","  #  "," ### "]);
+G("m",["     ","     ","## # ","# # #","# # #","# # #","# # #"]);
+G("n",["     ","     ","#### ","#   #","#   #","#   #","#   #"]);
+G("o",["     ","     "," ### ","#   #","#   #","#   #"," ### "]);
+G("p",["     ","#### ","#   #","#   #","#### ","#    ","#    "]);
+G("q",["     "," ####","#   #","#   #"," ####","    #","    #"]);
+G("r",["     ","     ","# ###","##   ","#    ","#    ","#    "]);
+G("s",["     ","     "," ####","#    "," ### ","    #","#### "]);
+G("t",[" #   "," #   ","#### "," #   "," #   "," #  #","  ## "]);
+G("u",["     ","     ","#   #","#   #","#   #","#  ##"," ## #"]);
+G("v",["     ","     ","#   #","#   #","#   #"," # # ","  #  "]);
+G("w",["     ","     ","#   #","# # #","# # #","# # #"," # # "]);
+G("x",["     ","     ","#   #"," # # ","  #  "," # # ","#   #"]);
+G("y",["     ","#   #","#   #","#   #"," ####","    #"," ### "]);
+G("z",["     ","     ","#####","   # ","  #  "," #   ","#####"]);
+G("0",[" ### ","#   #","#  ##","# # #","##  #","#   #"," ### "]);
+G("1",["  #  "," ##  ","  #  ","  #  ","  #  ","  #  "," ### "]);
+G("2",[" ### ","#   #","    #","   # ","  #  "," #   ","#####"]);
+G("3",["#####","   # ","  ## ","    #","    #","#   #"," ### "]);
+G("4",["   # ","  ## "," # # ","#  # ","#####","   # ","   # "]);
+G("5",["#####","#    ","#### ","    #","    #","#   #"," ### "]);
+G("6",["  ## "," #   ","#    ","#### ","#   #","#   #"," ### "]);
+G("7",["#####","    #","   # ","  #  "," #   "," #   "," #   "]);
+G("8",[" ### ","#   #","#   #"," ### ","#   #","#   #"," ### "]);
+G("9",[" ### ","#   #","#   #"," ####","    #","   # "," ##  "]);
+G(".",["     ","     ","     ","     ","     "," ##  "," ##  "]);
+G(",",["     ","     ","     ","     "," ##  "," ##  ","  #  "]);
+G("!",["  #  ","  #  ","  #  ","  #  ","  #  ","     ","  #  "]);
+G("?",[" ### ","#   #","    #","   # ","  #  ","     ","  #  "]);
+G("'",["  #  ","  #  ","     ","     ","     ","     ","     "]);
+G("-",["     ","     ","     ","#####","     ","     ","     "]);
+G(";",["     ","  #  ","  #  ","     ","  #  ","  #  "," #   "]);
+G(":",["     ","  #  ","  #  ","     ","  #  ","  #  ","     "]);
+G("/",["    #","    #","   # ","  #  "," #   ","#    ","#    "]);
+G("(",["   # ","  #  "," #   "," #   "," #   ","  #  ","   # "]);
+G(")",[" #   ","  #  ","   # ","   # ","   # ","  #  "," #   "]);
+G("&",[" ##  ","#  # "," ##  ","### #","#  ##","#  ##"," ## #"]);
+G("%",["#   #","#  # ","  #  "," #   ","#   #","    #","    #"]);
+G(">",[" #   ","  #  ","   # ","    #","   # ","  #  "," #   "]);
+G("*",["     "," # # ","  #  ","#####","  #  "," # # ","     "]);
+G("+",["     ","  #  ","  #  ","#####","  #  ","  #  ","     "]);
+G("=",["     ","     ","#####","     ","#####","     ","     "]);
+G("#",[" # # ","#####"," # # ","#####"," # # ","     ","     "]);
+G("_",["     ","     ","     ","     ","     ","     ","#####"]);
+G("[",["  ###","  #  ","  #  ","  #  ","  #  ","  #  ","  ###"]);
+G("]",["###  ","  #  ","  #  ","  #  ","  #  ","  #  ","###  "]);
+G("\u2665",["     "," # # ","#####","#####"," ### ","  #  ","     "]);
+
+function chw(ch){ return 6; }
+function text(s,x,y,c){
+  c=(c===undefined)?0:c;
+  let cx=x;
+  for(const ch of String(s)){
+    const g=F[ch]||F["?"];
+    for(let j=0;j<7;j++) for(let i=0;i<5;i++) if(g[j][i]==="#") px(cx+i,y+j,c);
+    cx+=6;
+  }
+  return cx;
+}
+function textw(s){ return String(s).length*6; }
+function wrap(s,maxCh){
+  const out=[];
+  for(const para of String(s).split("\n")){
+    let ln="";
+    for(const w of para.split(" ")){
+      if(ln && (ln+" "+w).length>maxCh){ out.push(ln); ln=w; }
+      else ln = ln?ln+" "+w:w;
+    }
+    out.push(ln);
+  }
+  return out;
+}
+function ctext(s,y,c,x0,w0){
+  x0=x0===undefined?0:x0; w0=w0===undefined?W:w0;
+  text(s, x0+Math.floor((w0-textw(s))/2), y, c);
+}
+
+/* ── Art: 16x16 tiles. ' '=3 light, '.'=2, ':'=1, '#'=0 dark, 't'=clear ── */
+const CMAP={" ":3,".":2,":":1,"#":0,"t":-1};
+function art(rows){ return rows.map(r=>[...r].map(c=>CMAP[c])); }
+
+const TILE={};
+TILE.floor=art([
+"                ","  .             ","                ","                ",
+"          .     ","                ","                ","    .           ",
+"                ","                ","                ","               .",
+"                ","      .         ","                ","                "]);
+TILE.carpet=art([
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  ..",
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  ..",
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  ..",
+"..  ..  ..  ..  ","..  ..  ..  ..  ","  ..  ..  ..  ..","  ..  ..  ..  .."]);
+TILE.wall=art([
+"::::::::::::::::",": ...  :  ... . ",": .... :  .. .. ","::::::::::::::::",
+"  ..  :  ...  : ","  ... :  .... : ","::::::::::::::::",": ...  :  ..  . ",
+": .. . :  ... . ","::::::::::::::::","  ..  :  ..   : ","  . . :  .... : ",
+"::::::::::::::::",": ..  :  ..  ..#",":::::::::::::: :","################"]);
+TILE.desk=art([
+"tttttttttttttttt","tttttttttttttttt","################","#              #",
+"#  ##########  #","#  #        #  #","#  #  ....  #  #","#  #  ....  #  #",
+"#  ##########  #","#              #","################","#..##########..#",
+"#..#tttttttt#..#","#..#tttttttt#..#","####tttttttt####","tttttttttttttttt"]);
+TILE.rack=art([
+"################","#::::::::::::::#","#: ##  ##  ## :#","#:            :#",
+"#: ##  ##  ## :#","#:            :#","#: ##  ##  ## :#","#:            :#",
+"#: ##  ##  ## :#","#:            :#","#: ##  ##  ## :#","#:            :#",
+"#::::::::::::::#","################","#  ##########  #","tttttttttttttttt"]);
+TILE.door=art([
+"################","#..............#","#.############.#","#.#          #.#",
+"#.#          #.#","#.#   ....   #.#","#.#   ....   #.#","#.#          #.#",
+"#.#        # #.#","#.#        # #.#","#.#          #.#","#.############.#",
+"#..............#","#..............#","#..............#","################"]);
+TILE.plant=art([
+"tttttt ##  ttttt","tttt ##  ##  ttt","tt ##  ##  ##  t","t  ##  ##  ##  t",
+"tt   ##  ##   tt","tttt  ####  tttt","tttttt ##  ttttt","tttttt ##  ttttt",
+"ttttt ####  tttt","tttt#......#tttt","tttt#......#tttt","tttt#......#tttt",
+"ttttt#....#ttttt","ttttt#....#ttttt","ttttt######ttttt","tttttttttttttttt"]);
+TILE.cabinet=art([
+"################","#              #","# ############ #","# #..........# #",
+"# #....##....# #","# ############ #","#              #","# ############ #",
+"# #..........# #","# #....##....# #","# ############ #","#              #",
+"# ############ #","# #..........# #","################","tttttttttttttttt"]);
+TILE.boxes=art([
+"tttttttttttttttt","tttt##########tt","tttt#........#tt","tttt#..####..#tt",
+"tttt#........#tt","tt##########..#t","tt#........#..#t","tt#..####..#..#t",
+"tt#........#..#t","tt#........####t","tt#..####..#tttt","tt#........#tttt",
+"tt##########tttt","tttttttttttttttt","tttttttttttttttt","tttttttttttttttt"]);
+TILE.term=art([
+"tttttttttttttttt","tt############tt","tt#::::::::::#tt","tt#:  ::  :: :#t",
+"tt#: ::: :: ::#t","tt#:  :  ::  :#t","tt#: :::  :: :#t","tt#::::::::::#tt",
+"tt############tt","tttt##....##tttt","tttt##....##tttt","tt##########tttt",
+"tt#........#tttt","tt##########tttt","tttttttttttttttt","tttttttttttttttt"]);
+TILE.board=art([
+"################","#..............#","#.############.#","#.#  ##      #.#",
+"#.#  #  ##   #.#","#.#         ##.#","#.#   ##     #.#","#.#  #  #  # #.#",
+"#.#        ##.#.","#.############.#","#..............#","################",
+"tttttttttttttttt","tttttttttttttttt","tttttttttttttttt","tttttttttttttttt"]);
+TILE.lift=art([
+"################","#::::::::::::::#","#:############:#","#:#..........#:#",
+"#:#.        .#:#","#:#. ##  ## .#:#","#:#.  #  #  .#:#","#:#.  #  #  .#:#",
+"#:#. ##  ## .#:#","#:#.        .#:#","#:#..........#:#","#:############:#",
+"#::::::::::::::#","################","tttttttttttttttt","tttttttttttttttt"]);
+TILE.mat=art([
+"################","#..............#","#.############.#","#.#          #.#",
+"#.#          #.#","#.#          #.#","#.#          #.#","#.#          #.#",
+"#.############.#","#..............#","################","                ",
+"                ","                ","                ","                "]);
+
+const TPAL={floor:"floor",carpet:"carpet",wall:"wall",desk:"desk",rack:"metal",
+  door:"door",plant:"plant",cabinet:"metal",boxes:"desk",term:"screen",
+  board:"paper",lift:"metal",mat:"door"};
+const SOLID=new Set(["wall","desk","rack","cabinet","boxes","term","board","plant","lift"]);
+
+function drawTile(t,x,y,pal){
+  const a=TILE[t]; if(!a)return;
+  usePal(pal||TPAL[t]||"floor");
+  for(let j=0;j<16;j++)for(let i=0;i<16;i++){ const c=a[j][i]; if(c>=0) px(x+i,y+j,c); }
+}
+
+/* ── Character sprites: 16x16, 't' transparent ── */
+const CH={};
+function chart(rows){ return art(rows); }
+CH.pdown=[chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#          #tt","tt# ##    ## #tt","tt#          #tt","tt#   ####   #tt",
+"ttt#        #ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#....##....#tt","tt#..........#tt","ttt##::::::##ttt","tttt##tttt##tttt"]),
+chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#          #tt","tt# ##    ## #tt","tt#          #tt","tt#   ####   #tt",
+"ttt#        #ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#....##....#tt","tt#..........#tt","ttt#::::::::#ttt","ttt##tttttt##ttt"])];
+CH.pup=[chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt",
+"ttt#::::::::#ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#..........#tt","tt#..........#tt","ttt##::::::##ttt","tttt##tttt##tttt"]),
+chart([
+"ttttt######ttttt","tttt##::::##tttt","tt###::::::###tt","tt#::::::::::#tt",
+"tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt","tt#::::::::::#tt",
+"ttt#::::::::#ttt","tttt########tttt","ttt#........#ttt","tt#..........#tt",
+"tt#..........#tt","tt#..........#tt","ttt#::::::::#ttt","ttt##tttttt##ttt"])];
+CH.pside=[chart([
+"tttt######tttttt","ttt##::::##ttttt","tt#::::::::#tttt","tt#::::::::#tttt",
+"tt#      ::#tttt","tt# ##   ::#tttt","tt#      ::#tttt","tt#  ###  :#tttt",
+"ttt#      #ttttt","tttt######tttttt","ttt#......#ttttt","tt#........#tttt",
+"tt#...##...#tttt","tt#........#tttt","ttt#::::::#ttttt","tttt##tt##tttttt"]),
+chart([
+"tttt######tttttt","ttt##::::##ttttt","tt#::::::::#tttt","tt#::::::::#tttt",
+"tt#      ::#tttt","tt# ##   ::#tttt","tt#      ::#tttt","tt#  ###  :#tttt",
+"ttt#      #ttttt","tttt######tttttt","ttt#......#ttttt","tt#........#tttt",
+"tt#...##...#tttt","tt#........#tttt","ttt#::::::#ttttt","ttt##tttt##ttttt"])];
+
+/* NPC sprites */
+CH.npcA=[chart([
+"ttttt######ttttt","tttt#......#tttt","tt##.######.##tt","tt#...####...#tt",
+"tt#..::::::..#tt","tt#..#::::#..#tt","tt#..::::::..#tt","tt#...####...#tt",
+"ttt#.::::::.#ttt","tttt##::::##tttt","ttt#..####..#ttt","tt#.........#ttt",
+"tt#..#::::#..#tt","tt#..#::::#..#tt","ttt##ttttt##tttt","tttt##ttttt##ttt"])];
+CH.npcB=[chart([
+"ttttt######ttttt","tttt#::::::#tttt","tt##::::::::##tt","tt#:.######.:#tt",
+"tt#:.#....#.:#tt","tt#:.#.##.#.:#tt","tt#:.#....#.:#tt","tt#:.######.:#tt",
+"ttt#::::::::#ttt","tttt#:....:#tttt","ttt#::####::#ttt","tt#:::::::::#ttt",
+"tt#:.#::::#.:#tt","tt#::#::::#::#tt","ttt##ttttt##tttt","tttt##ttttt##ttt"])];
+CH.npcC=[chart([
+"tttt########tttt","ttt#........#ttt","tt#..######..#tt","tt#.#::::::#.#tt",
+"tt#.#:#::#:#.#tt","tt#.#::::::#.#tt","tt#.#:####:#.#tt","tt#.#::::::#.#tt",
+"tt#..######..#tt","ttt#........#ttt","ttt#..####..#ttt","tt#..######..#tt",
+"tt#.#......#.#tt","tt#.#......#.#tt","ttt##tttttt##ttt","tttt##ttttt##ttt"])];
+
+function drawSprite(a,x,y,flip,pal){
+  usePal(pal||"hero");
+  for(let j=0;j<16;j++)for(let i=0;i<16;i++){
+    const c=a[j][flip?15-i:i]; if(c>=0) px(x+i,y+j,c);
+  }
+}
+
+/* ── Creature sprites: 32x32 drawn from 16x16 art, doubled ── */
+const MON={};
+/* ── SKILLS (your party) ── */
+MON.VERIFY=chart([
+"tt############tt","tt#..........#tt","tt#.########.#tt","tt#.#::::::#.#tt",
+"tt#.#:#..#:#.#tt","tt#.#::::::#.#tt","tt#.########.#tt","tt#..........#tt",
+"tt#..######..#tt","tt#..........#tt","tt#..####....#tt","tt#..........#tt",
+"tt############tt","ttt#..####..#ttt","ttt#........#ttt","tttt########tttt"]);
+MON.ISOLATE=chart([
+"tttt########tttt","tt##::::::::##tt","t#::......::::#t","t#:..######..:#t",
+"#::.########.::#","#::.########.::#","#::.########.::#","t#:..######..:#t",
+"t#::......::::#t","tt##::::::::##tt","tttt####..##tttt","tttttt##..##tttt",
+"ttttttt##..##ttt","tttttttt##..##tt","ttttttttt##..#tt","tttttttttt####tt"]);
+MON.KBSEARCH=chart([
+"tt############tt","tt#..........#tt","tt#.##....##.#tt","tt#.##....##.#tt",
+"tt#.##....##.#tt","tt#..........#tt","tt#.########.#tt","tt#..........#tt",
+"tt#.##....##.#tt","tt#.##....##.#tt","tt#..........#tt","tt#.########.#tt",
+"tt#..........#tt","tt############tt","ttt##########ttt","tttt########tttt"]);
+MON.HANDSON=chart([
+"tttttttt####tttt","tttttttt#..#tttt","tttttttt#..#tttt","ttttttt##..##ttt",
+"ttttttt#....#ttt","tttttt##....##tt","tttttt#......#tt","tttt###......##t",
+"tt###..........#","t#..............","t#....######...#","tt#..#tttt#..##t",
+"ttt##ttttttt##tt","tttttttttttttttt","tttttttttttttttt","tttttttttttttttt"]);
+MON.PACKET=chart([
+"tttt##tttt##tttt","ttt#..#tt#..#ttt","ttt#..#tt#..#ttt","tttt##::::##tttt",
+"tttttt::::::tttt","tt####::::::####","t#..#::::::::#.#","t#..#::::::::#.#",
+"t#..#::::::::#.#","tt####::::::####","tttttt::::::tttt","tttt##::::##tttt",
+"ttt#..#tt#..#ttt","ttt#..#tt#..#ttt","tttt##tttt##tttt","tttttttttttttttt"]);
+MON.ESCALATE=chart([
+"tttttt####tttttt","tttt##....##tttt","tt##........##tt","t#....####....#t",
+"#....######....#","t###..####..###t","tttt##....##tttt","tttt#......#tttt",
+"tttt#......#tttt","tttt#......#tttt","tttt#......#tttt","tttt########tttt",
+"ttt#........#ttt","ttt#........#ttt","ttt##########ttt","tttttttttttttttt"]);
+MON.DOCUMENT=chart([
+"tttt########tttt","ttt#........#ttt","tt#.########.#tt","tt#.#......#.#tt",
+"tt#.#.####.#.#tt","tt#.#......#.#tt","tt#.#.####.#.#tt","tt#.#......#.#tt",
+"tt#.#.####.#.#tt","tt#.#......#.#tt","tt#.########.#tt","tt#..........#tt",
+"tt############tt","ttt#..####..#ttt","ttt#........#ttt","tttt########tttt"]);
+
+/* ── TICKETS (what you fight) ── */
+MON.PERIPH=chart([
+"ttttt######ttttt","tttt##....##tttt","ttt#........#ttt","tt#..##..##..#tt",
+"tt#.#::#.#::#.#t","tt#..##..##..#tt","tt#....##....#tt","tt#..........#tt",
+"tt#...####...#tt","tt#..######..#tt","tt#.########.#tt","tt#.########.#tt",
+"ttt#........#ttt","tttt##....##tttt","ttttt######ttttt","tttttttttttttttt"]);
+MON.DISPLAY=chart([
+"################","#..............#","#.############.#","#.#::::::::::#.#",
+"#.#::##::##::#.#","#.#::::::::::#.#","#.#:::####:::#.#","#.#::::::::::#.#",
+"#.############.#","#..............#","################","tttt##....##tttt",
+"tttt##....##tttt","tt##########..tt","tt############tt","tttttttttttttttt"]);
+MON.ACCOUNT=chart([
+"tttt########tttt","ttt#........#ttt","tt#..######..#tt","tt#.##tttt##.#tt",
+"tt#.#tttttt#.#tt","tt#.#tttttt#.#tt","############tttt","#..........#tttt",
+"#.########.#tttt","#.#......#.#tttt","#.#..##..#.#tttt","#.#..##..#.#tttt",
+"#.#......#.#tttt","#.########.#tttt","#..........#tttt","############tttt"]);
+MON.PERF=chart([
+"tt############tt","tt#..........#tt","ttt#........#ttt","tttt#......#tttt",
+"ttttt#....#ttttt","tttttt#..#tttttt","ttttttt##ttttttt","ttttttt##ttttttt",
+"tttttt#..#tttttt","ttttt#....#ttttt","tttt#..##..#tttt","ttt#..####..#ttt",
+"tt#..######..#tt","tt#.########.#tt","tt############tt","tttttttttttttttt"]);
+MON.PRINTER=chart([
+"ttt##########ttt","ttt#........#ttt","ttt#.######.#ttt","ttt#........#ttt",
+"t##############t","#..............#","#.####....####.#","#.#::#....#::#.#",
+"#.####....####.#","#..............#","#.############.#","#..............#",
+"################","tt############tt","tt#..........#tt","tt############tt"]);
+MON.PHISH=chart([
+"tttttttt####tttt","tttttttt#..#tttt","tttttttt#..#tttt","tttttttt#..#tttt",
+"################","#:............:#","#:.##......##.:#","#:...##..##...:#",
+"#:.....##.....:#","#:...##..##...:#","#:.##......##.:#","#:............:#",
+"################","tttt##tttttttttt","ttt#..#ttttttttt","tttt##tttttttttt"]);
+MON.BEC=chart([
+"tt############tt","tt#..........#tt","tt#.########.#tt","tt#.#::::::#.#tt",
+"tt#.#::##::#.#tt","tt#.#::::::#.#tt","tt#.########.#tt","tt#..........#tt",
+"##############tt","#............#tt","#.##########.#tt","#.#........#.#tt",
+"#.#..####..#.#tt","#.#........#.#tt","#.##########.#tt","##############tt"]);
+MON.MFA=chart([
+"tttt########tttt","tttt#......#tttt","tttt#.####.#tttt","tttt#.#::#.#tttt",
+"##..#.#::#.#..##","#..#..#::#..#..#","#..#..####..#..#","##..#......#..##",
+"tttt#.####.#tttt","tttt#.#::#.#tttt","tttt#.####.#tttt","tttt#......#tttt",
+"tttt#.####.#tttt","tttt#......#tttt","tttt########tttt","tttttttttttttttt"]);
+MON.SPEAR=chart([
+"tttttttttt####tt","ttttttttt#....#t","tttttttt#..##..#","tttt####..#::#.#",
+"tt##....##..##..","t#....##..####.t","#..##....##....t","#....##..#..##.t",
+"#..##....##....t","t#....##..####.t","tt##....##..##..","tttt####..#::#.#",
+"tttttttt#..##..#","ttttttttt#....#t","tttttttttt####tt","tttttttttttttttt"]);
+MON.DOCK=chart([
+"tttttttttttttttt","tt############tt","tt#..........#tt","tt############tt",
+"##############tt","#............#tt","#.##.##.##.#.#tt","#............#tt",
+"#.##########.#tt","#............#tt","##############tt","tt##########tttt",
+"tt#........#tttt","tt##########tttt","tttt######tttttt","tttttttttttttttt"]);
+MON.HWFAIL=chart([
+"################","#..............#","#.############.#","#.#::::::::::#.#",
+"#.#::::::::::#.#","#.############.#","#..............#","################",
+"tt##..##..##..tt","tt##..##..##..tt","tttttttttttttttt","tttt##ttt##ttttt",
+"ttt#..#t#..#tttt","ttt#..#t#..#tttt","tttt##ttt##ttttt","tttttttttttttttt"]);
+MON.NETFAIL=chart([
+"ttttt######ttttt","ttt##......##ttt","tt#..######..#tt","t#..##::::##..#t",
+"t#.#::::::::#.#t","#..#::####::#..#","#.#::#tttt#::#.#","#.#::#tttt#::#.#",
+"#..#::####::#..#","t#.#::::::::#.#t","t#..##::::##..#t","tt#..######..#tt",
+"ttt##......##ttt","ttttt######ttttt","tttttttttttttttt","tttttttttttttttt"]);
+MON.PROCESS=chart([
+"tttt########tttt","ttt#..####..#ttt","tt#..######..#tt","tt############tt",
+"tt#..........#tt","tt#.#......#.#tt","tt#..#....#..#tt","tt#...#..#...#tt",
+"tt#....##....#tt","tt#...#..#...#tt","tt#..#....#..#tt","tt#.#......#.#tt",
+"tt#..........#tt","tt############tt","ttt##########ttt","tttttttttttttttt"]);
+MON.MAJOR=chart([
+"tttttt####tttttt","tttt##....##tttt","tt##........##tt","t#....####....#t",
+"#....##::##....#","#...##::::##...#","#...#::##::#...#","#...#::##::#...#",
+"#...##::::##...#","#....##::##....#","t#....####....#t","tt##........##tt",
+"tt############tt","t##############t","#..............#","################"]);
+
+const MONPAL={MULTIFACTOR:"ACCESS",LOGKEEPER:"DETECT",PATCHLING:"HARDEN",
+  BACKUPWYRM:"RECOVER",ENCRYPTOR:"HARDEN",INVENTORY:"GOVERN",
+  SHAREDPASS:"threat",STALEACCT:"void",OPENPORT:"threat",NOLOGS:"void",
+  SHADOWIT:"rot",TICKETSTORM:"boss"};
+function drawMon(name,x,y,scale,pal){
+  const a=MON[name]; if(!a)return; scale=scale||2;
+  usePal(pal||MONPAL[name]||"ui");
+  for(let j=0;j<16;j++)for(let i=0;i<16;i++){
+    const c=a[j][i]; if(c<0)continue;
+    for(let sj=0;sj<scale;sj++)for(let si=0;si<scale;si++) px(x+i*scale+si,y+j*scale+sj,c);
+  }
+}
+
+/* ══ HELP DESK QUEST — data ═════════════════════════════════════════
+   Every ticket is a real one. The DEX entry for each is the lesson.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const TYPES=["PEOPLE","HARDWARE","SOFTWARE","NETWORK","SECURITY"];
+const TSHORT={PEOPLE:"PPL",HARDWARE:"HW",SOFTWARE:"SW",NETWORK:"NET",SECURITY:"SEC"};
+
+const MOVES={
+  ASK:{name:"Ask",kind:"ask",pow:5,
+    blurb:"Gather detail. Every later move hits harder."},
+  VERIFY:{name:"Verify",kind:"verify",pow:6,
+    blurb:"Confirm who you are talking to. Mandatory on account tickets."},
+  ISOLATE:{name:"Isolate",kind:"isolate",pow:10,
+    blurb:"Rule causes out one at a time. Scales with detail."},
+  FIX:{name:"Fix",kind:"fix",pow:22,
+    blurb:"Apply the change. Guessing without detail backfires."},
+  ESCALATE:{name:"Escalate",kind:"escalate",pow:14,
+    blurb:"Hand off. Right call out of scope, costly in scope."},
+  DOCUMENT:{name:"Document",kind:"document",pow:8,
+    blurb:"Write it up. Protects the next person on shift."}
+};
+
+const SKILLS={
+  VERIFY:{short:"Confirm identity before any account change.",name:"VERIFY",type:"SECURITY",hp:34,atk:9,
+    moves:["ASK","VERIFY","ISOLATE","DOCUMENT"],
+    dex:"Identity confirmation before any account change. The one step that cannot be skipped, and the one users push hardest to skip."},
+  ISOLATE:{short:"Change one thing at a time.",name:"ISOLATE",type:"SOFTWARE",hp:32,atk:10,
+    moves:["ASK","ISOLATE","FIX","DOCUMENT"],
+    dex:"Change one thing at a time. Reboot before reimage. The boring method that solves most of the queue."},
+  KBSEARCH:{short:"Someone already solved this. Look it up.",name:"KBSEARCH",type:"SOFTWARE",hp:30,atk:9,
+    moves:["ASK","ISOLATE","FIX","DOCUMENT"],
+    dex:"Someone has already solved this. Search the knowledge base before you touch anything."},
+  HANDSON:{short:"Substitution is proof. Opinion is not.",name:"HANDSON",type:"HARDWARE",hp:38,atk:11,
+    moves:["ASK","ISOLATE","FIX","DOCUMENT"],
+    dex:"Reseat it. Swap it. Test the cable with a known-good one. Hardware faults are proved by substitution."},
+  PACKET:{short:"Link, address, gateway, DNS, app.",name:"PACKET",type:"NETWORK",hp:33,atk:10,
+    moves:["ASK","ISOLATE","FIX","ESCALATE"],
+    dex:"Work up the stack. Link light, address, gateway, DNS, then the application. In that order, every time."},
+  ESCALATE:{short:"Know your scope. Hand off with facts.",name:"ESCALATE",type:"PEOPLE",hp:31,atk:8,
+    moves:["ASK","ESCALATE","DOCUMENT","ISOLATE"],
+    dex:"Knowing your scope is a skill. Escalating early wastes Tier 2. Escalating late breaks the SLA."},
+  DOCUMENT:{short:"Observed, tried, result, next.",name:"DOCUMENT",type:"PEOPLE",hp:36,atk:8,
+    moves:["ASK","DOCUMENT","ISOLATE","ESCALATE"],
+    dex:"A ticket nobody can read is a ticket nobody can hand off. Write what you saw, what you tried, what worked."}
+};
+
+/* account:true  -> Verify is mandatory, fixing without it fails the ticket
+   oos:true      -> genuinely out of scope, Escalate is the correct answer
+   sla           -> turns before the ticket breaches                        */
+const TICKETS={
+  /* ── ACT 1 · TIER ONE ── */
+  DEADMOUSE:{name:"DEADMOUSE",spr:"PERIPH",pal:"HARDWARE",hp:26,atk:7,weak:"HARDWARE",sla:7,act:1,
+    cat:"Peripheral", user:"\"My mouse just stopped.\"",
+    intro:"A wireless mouse that worked on Friday and does not work today.",
+    lesson:"Wireless peripherals fail in a fixed order: batteries, then the USB receiver, then the port, then pairing. Ask whether it is wireless before you ask anything else - it halves the tree. A mouse dead on one port and alive on another is a port fault, not a mouse fault.",
+    tip:"Batteries first. It is not beneath you and it is usually right."},
+  BLACKSCREEN:{name:"BLACKSCREEN",spr:"DISPLAY",pal:"HARDWARE",hp:30,atk:8,weak:"HARDWARE",sla:7,act:1,
+    cat:"Display", user:"\"My monitor is broken.\"",
+    intro:"No picture. The tower is humming and the power light is amber.",
+    lesson:"Amber usually means the monitor has power but no signal. Check the input source before anything else - a monitor set to HDMI with the cable in DisplayPort is the single most common false hardware failure. Then reseat both ends, then test a known-good cable.",
+    tip:"Amber light = signal problem. Green and black = the PC."},
+  LOCKOUT:{name:"LOCKOUT",spr:"ACCOUNT",pal:"SECURITY",hp:32,atk:9,weak:"SECURITY",sla:6,act:1,account:true,
+    cat:"Account", user:"\"I need my password reset, I'm late for a meeting.\"",
+    intro:"Locked out after three attempts. They are in a hurry and they are annoyed.",
+    lesson:"Urgency is the oldest lever in social engineering. Verify identity before any account change, every time, including when the caller is senior to you and especially when they are impatient. Use the approved method - callback to the number on record, or the identity questions your org defines. Note in the ticket which method you used.",
+    tip:"Verify first. An angry user is not proof of identity."},
+  CRAWLING:{name:"CRAWLING",spr:"PERF",pal:"SOFTWARE",hp:29,atk:8,weak:"SOFTWARE",sla:8,act:1,
+    cat:"Performance", user:"\"My computer is slow.\"",
+    intro:"Vague, universal, and usually four separate problems wearing a coat.",
+    lesson:"\"Slow\" is not a symptom, it is a category. Narrow it: slow to boot, slow to open one app, or slow all day? Check uptime - a machine up for forty days has not had a patch reboot. Then startup apps, then disk space under 10 percent free, then resource usage while it is actually slow.",
+    tip:"Ask when it is slow. The answer picks the fix."},
+  SPOOLER:{name:"SPOOLER",spr:"PRINTER",pal:"boss",hp:50,atk:9,weak:"SOFTWARE",sla:11,act:1,boss:true,
+    cat:"Printing", user:"\"Nothing prints. The whole floor.\"",
+    intro:"Nine tickets in eleven minutes. All printing. All the same floor.",
+    lesson:"Multiple users, one service - that is not nine tickets, it is one incident with nine reporters. Link them. For print: clear the queue, restart the spooler service, confirm the printer is not in an error or offline state, check the driver on the print server rather than each desktop. Fixing the server fixes all nine.",
+    tip:"Same symptom, many users? Stop and look upstream."},
+
+  /* ── ACT 2 · THE INBOX ── */
+  LOOKALIKE:{name:"LOOKALIKE",spr:"PHISH",pal:"threat",hp:32,atk:10,weak:"SECURITY",sla:6,act:2,
+    cat:"Phishing", user:"\"Is this email real? It looks like our vendor.\"",
+    intro:"From the finance vendor. Almost. The domain is one character out.",
+    lesson:"Look at the actual sending address, not the display name - display names are free to set. Watch for character substitution: rn for m, l for I, a hyphen added, a .co where .com should be. Hover links and read the real destination. Report through your phishing button so the whole tenant gets protected, not just this user.",
+    tip:"Read the domain character by character. Out loud if you have to."},
+  GIFTCARD:{name:"GIFTCARD",spr:"BEC",pal:"threat",hp:34,atk:11,weak:"SECURITY",sla:5,act:2,
+    cat:"Social eng.", user:"\"The director needs gift cards for a client thing. Urgent.\"",
+    intro:"Urgency, secrecy, a request outside normal process, and a sender who cannot take a call.",
+    lesson:"Business email compromise runs on three signals together: unusual request, artificial urgency, and a reason you cannot verify through the normal channel. Any one is odd. All three is an attack. Verify out of band - call the person on their known number. Never reply to the email to check; you are just asking the attacker if they are real.",
+    tip:"Out of band verification. Reply-to is the attacker's field."},
+  PUSHSTORM:{name:"PUSHSTORM",spr:"MFA",pal:"threat",hp:36,atk:12,weak:"SECURITY",sla:4,act:2,account:true,
+    cat:"MFA", user:"\"My phone keeps buzzing. I hit approve to make it stop.\"",
+    intro:"Forty MFA prompts overnight. They approved one at 3am.",
+    lesson:"MFA fatigue: the attacker already has the password and is spamming push prompts until someone taps approve. If a user reports unexpected prompts, treat the account as compromised - reset the password, revoke active sessions and tokens, re-enroll MFA, then check sign-in logs for where it came from. Number matching prevents the whole class of attack.",
+    tip:"Unexpected prompts mean the password is already gone."},
+  CALLBACK:{name:"CALLBACK",spr:"ACCOUNT",pal:"threat",hp:35,atk:11,weak:"SECURITY",sla:5,act:2,account:true,
+    cat:"Vishing", user:"\"This is the VP's assistant. He needs access restored now.\"",
+    intro:"A confident voice, a name you recognise, and a number you do not.",
+    lesson:"Voice phishing borrows authority you cannot see. The caller ID is spoofable and the name is public on LinkedIn. Hang up and call back on the number in the directory - not the number they give you. A legitimate caller will not object to being verified. Someone who escalates to anger when asked to verify has told you what they are.",
+    tip:"Call back on the number you looked up, not the one you were given."},
+  SPEARPHISH:{name:"SPEARPHISH",spr:"SPEAR",pal:"boss",hp:64,atk:13,weak:"SECURITY",sla:8,act:2,boss:true,account:true,
+    cat:"Spear phishing", user:"\"It knew my manager's name and our project.\"",
+    intro:"Not a spray. Someone did homework. It names a real project and a real person.",
+    lesson:"Spear phishing is researched, so the usual tells - bad grammar, generic greeting - are gone. What remains is the ask: credentials, payment, or a file. Check the sending domain, check whether the link destination matches the text, and verify the request out of band. Then hunt: search the tenant for who else received it and pull it before they open it.",
+    tip:"When the content is convincing, judge the request, not the writing."},
+
+  /* ── ACT 3 · THE CLOSET ── */
+  GHOSTDOCK:{name:"GHOSTDOCK",spr:"DOCK",pal:"HARDWARE",hp:36,atk:11,weak:"HARDWARE",sla:7,act:3,
+    cat:"Docking", user:"\"Second screen only works sometimes.\"",
+    intro:"Works at one desk, not at another. Same laptop, same user.",
+    lesson:"Docks fail intermittently more than they fail outright. Test the variables separately: laptop to monitor direct rules out the dock, a different dock rules out that unit, a different port rules out the port. Dock firmware is a real and frequently missed fix. Daisy-chained DisplayPort needs MST enabled on the monitor.",
+    tip:"Direct connection first. It splits the problem in half."},
+  BADSTICK:{name:"BADSTICK",spr:"HWFAIL",pal:"HARDWARE",hp:34,atk:12,weak:"HARDWARE",sla:8,act:3,
+    cat:"Hardware fault", user:"\"It keeps crashing. Blue screen.\"",
+    intro:"Random crashes, no pattern, different error codes each time.",
+    lesson:"Different stop codes each crash points at memory or storage rather than a driver - a bad driver tends to fail the same way twice. Run the built-in memory diagnostic, then check drive health. If there are multiple sticks, test one at a time; substitution is the proof. Reseating alone fixes a surprising share of them.",
+    tip:"Same error twice is software. Different errors is hardware."},
+  DRIVERROT:{name:"DRIVERROT",spr:"PROCESS",pal:"SOFTWARE",hp:31,atk:10,weak:"SOFTWARE",sla:7,act:3,
+    cat:"Drivers", user:"\"It broke right after the update.\"",
+    intro:"Worked yesterday. Updated overnight. Does not work today.",
+    lesson:"\"What changed?\" is the highest-value question on the desk. If a device broke immediately after an update, roll the driver back before anything else - the rollback button exists precisely for this. Then pin the version or block the update for that device class until the vendor ships a fix, and note it so the next person does not reinstall the bad one.",
+    tip:"Ask what changed. Then undo that thing."},
+  IMAGEFAIL:{name:"IMAGEFAIL",spr:"HWFAIL",pal:"SOFTWARE",hp:33,atk:11,weak:"HARDWARE",sla:9,act:3,
+    cat:"Deployment", user:"\"The new machine won't image.\"",
+    intro:"It gets to the boot menu and then nothing.",
+    lesson:"Network boot needs three things right: the NIC first in boot order, the machine on a VLAN that can reach the deployment server, and Secure Boot in the state your image expects. Wrong VLAN is the quiet one - the machine looks fine and simply never finds the server. Check the switch port before you blame the image.",
+    tip:"PXE failures are usually the network, not the image."},
+  FLEETDOWN:{name:"FLEETDOWN",spr:"DOCK",pal:"boss",hp:66,atk:13,weak:"HARDWARE",sla:10,act:3,boss:true,
+    cat:"Fleet incident", user:"\"Every dock on the third floor.\"",
+    intro:"Eleven desks. Same model dock. All after Tuesday's firmware push.",
+    lesson:"When one model fails everywhere at once, the change is the cause. Find what shipped and when, confirm the correlation, then roll it back for the affected group rather than fixing eleven desks by hand. Log it as one incident with eleven affected users. This is where a good ticket note becomes a vendor case number.",
+    tip:"One model, one timeframe, one cause. Look at the change log."},
+
+  /* ── ACT 4 · THE WIRE ── */
+  APIPA:{name:"APIPA",spr:"NETFAIL",pal:"NETWORK",hp:34,atk:11,weak:"NETWORK",sla:6,act:4,
+    cat:"DHCP", user:"\"No internet on this one machine.\"",
+    intro:"Link light is on. The address starts 169.254.",
+    lesson:"A 169.254.x.x address is APIPA - the machine asked for DHCP and nothing answered. That is not an internet problem, it is a lease problem. Release and renew first. If it comes back APIPA, the fault is upstream: the switch port, the VLAN, or a DHCP scope that has run out of addresses. One machine points at the port; the whole floor points at the scope.",
+    tip:"169.254 means DHCP never answered. Look at the port."},
+  DNSDEAD:{name:"DNSDEAD",spr:"NETFAIL",pal:"NETWORK",hp:36,atk:12,weak:"NETWORK",sla:6,act:4,
+    cat:"DNS", user:"\"Websites don't load but Teams works.\"",
+    intro:"Some things work. Some things do not. That pattern is the clue.",
+    lesson:"If an IP address works and the name does not, it is DNS. Test it: ping the gateway, then ping a public IP, then resolve a name. Flush the resolver cache, confirm the machine has the right DNS servers, and check whether it is one host or everyone. Applications that hold their own connection can keep working through a DNS outage, which is why the symptoms look inconsistent.",
+    tip:"IP works, name doesn't. That is DNS, every time."},
+  TUNNELVISION:{name:"TUNNELVISION",spr:"PACKET",pal:"NETWORK",hp:35,atk:11,weak:"NETWORK",sla:7,act:4,
+    cat:"VPN", user:"\"On VPN I can't reach the file share.\"",
+    intro:"Connected, authenticated, and still cannot see internal resources.",
+    lesson:"A VPN that connects but reaches nothing is usually routing, not authentication. Check whether split tunnelling is sending internal traffic out the wrong path, whether the client got internal DNS servers, and whether the resource is in a range the tunnel actually routes. Overlapping home and corporate subnets breaks this in a way that looks random.",
+    tip:"Connected is not the same as routed."},
+  WRONGVLAN:{name:"WRONGVLAN",spr:"PACKET",pal:"NETWORK",hp:33,atk:10,weak:"NETWORK",sla:8,act:4,oos:true,
+    cat:"Switching", user:"\"This desk has never worked.\"",
+    intro:"New desk, new drop. Link light, no address, no route anywhere.",
+    lesson:"A port on the wrong VLAN behaves like a broken cable that tests fine. You can prove it - known-good cable, known-good laptop, still nothing - but changing switch configuration is not a Tier 1 action in most orgs. Document the port number, the patch panel location and what you ruled out, then escalate to networking. That handoff note is the whole job here.",
+    tip:"Prove it, document the port, hand it over."},
+  RESOLVER:{name:"RESOLVER",spr:"NETFAIL",pal:"boss",hp:70,atk:14,weak:"NETWORK",sla:10,act:4,boss:true,
+    cat:"Major incident", user:"\"Everything is down.\"",
+    intro:"Thirty tickets in four minutes. Every one of them different. Every one of them DNS.",
+    lesson:"In a major incident your job changes. Stop solving and start collecting: what is the common factor, when did it start, who is affected, what changed. Post one status update so the queue stops growing. Feed structured facts to whoever owns the fix. The person who keeps a clean timeline during a P1 is the person everyone remembers afterwards.",
+    tip:"During a P1, information flow is the deliverable."},
+
+  /* ── ACT 5 · ESCALATION ── */
+  MISPRIORITY:{name:"MISPRIORITY",spr:"PROCESS",pal:"PEOPLE",hp:34,atk:11,weak:"PEOPLE",sla:6,act:5,
+    cat:"Prioritisation", user:"\"Mine is urgent too.\"",
+    intro:"Four P1s in the queue. Two of them are not P1s.",
+    lesson:"Priority is impact times urgency, not volume of complaint. One executive with a broken mouse is low impact. Forty people who cannot log in is high impact even if nobody has phoned yet. Set priority from the matrix your org publishes and record why, because the reason is what protects you when someone disagrees later.",
+    tip:"Impact times urgency. Not who shouted loudest."},
+  NOCHANGE:{name:"NOCHANGE",spr:"PROCESS",pal:"PEOPLE",hp:36,atk:12,weak:"PEOPLE",sla:7,act:5,oos:true,
+    cat:"Change control", user:"\"Just push it now, it's a small change.\"",
+    intro:"A production change with no ticket, no approval and no rollback plan.",
+    lesson:"Small changes cause large outages, which is the entire reason change control exists. If there is no approved change record and no rollback plan, the answer is not yes and it is not no - it is escalate to whoever owns the change process. Saying that clearly and without apology is a Tier 1 skill that reads as senior.",
+    tip:"No approval, no rollback plan, no deployment."},
+  SLACLOCK:{name:"SLACLOCK",spr:"PERF",pal:"PEOPLE",hp:35,atk:12,weak:"PEOPLE",sla:5,act:5,
+    cat:"SLA", user:"(no contact - the timer is at nine minutes)",
+    intro:"An untouched ticket about to breach while you are mid-call on another.",
+    lesson:"A breach you saw coming and communicated is a very different conversation from a breach that surprised everyone. Update the ticket before the clock runs out, even if the update is only that you are still working it. Silence is what turns a late ticket into a complaint.",
+    tip:"Update before it breaches. Silence is the real failure."},
+  HANDOFF:{name:"HANDOFF",spr:"DOCUMENT",pal:"PEOPLE",hp:33,atk:10,weak:"PEOPLE",sla:8,act:5,
+    cat:"Documentation", user:"\"There's nothing in the notes.\"",
+    intro:"Inherited at shift change. Three days old. Six words in the log.",
+    lesson:"Write for the person who picks this up at 2am with no context: what the user reported, what you observed, what you tried, what the result was, what is next. Timestamps on each. It takes ninety seconds and it is the difference between a handoff and a restart.",
+    tip:"Observed, tried, result, next. Four lines, every time."},
+  SEVONE:{name:"SEVONE",spr:"MAJOR",pal:"boss",hp:76,atk:15,weak:"PEOPLE",sla:12,act:5,boss:true,
+    cat:"Major incident", user:"\"Bridge call. Now.\"",
+    intro:"Payroll, on payroll day, ninety minutes before cutoff. Everyone is on the call and nobody has the facts.",
+    lesson:"On a bridge call, the useful person is the one with a timeline. First report at this time, this many affected, this changed beforehand, this has been ruled out. Do not speculate about cause on an open call. Take the notes nobody else is taking, keep the status page current, and hand a clean summary to the post-incident review.",
+    tip:"Facts, timeline, no speculation. Be the one taking notes."}
+};
+
+const ACTS=[
+  {n:1,name:"TIER ONE",floor:"S1",where:"The Floor",goal:"Learn the queue.",
+   tickets:["DEADMOUSE","BLACKSCREEN","LOCKOUT","CRAWLING"],boss:"SPOOLER",
+   badge:"QUEUE BADGE",map:"floor"},
+  {n:2,name:"THE INBOX",floor:"02",where:"Security Corner",goal:"Read the email.",
+   tickets:["LOOKALIKE","GIFTCARD","PUSHSTORM","CALLBACK"],boss:"SPEARPHISH",
+   badge:"PHISH BADGE",map:"inbox"},
+  {n:3,name:"THE CLOSET",floor:"03",where:"Hardware Bench",goal:"Prove it with parts.",
+   tickets:["GHOSTDOCK","BADSTICK","DRIVERROT","IMAGEFAIL"],boss:"FLEETDOWN",
+   badge:"BENCH BADGE",map:"closet"},
+  {n:4,name:"THE WIRE",floor:"04",where:"MDF / Network",goal:"Work up the stack.",
+   tickets:["APIPA","DNSDEAD","TUNNELVISION","WRONGVLAN"],boss:"RESOLVER",
+   badge:"WIRE BADGE",map:"mdf"},
+  {n:5,name:"ESCALATION",floor:"06",where:"The Bridge",goal:"Own the incident.",
+   tickets:["MISPRIORITY","NOCHANGE","SLACLOCK","HANDOFF"],boss:"SEVONE",
+   badge:"BRIDGE BADGE",map:"bridge"}
+];
+
+/* skill unlocks: which NPC hands over what, and when */
+const UNLOCKS=[
+  {skill:"ISOLATE", act:1, need:0},
+  {skill:"VERIFY",  act:1, need:1},
+  {skill:"KBSEARCH",act:2, need:0},
+  {skill:"HANDSON", act:3, need:0},
+  {skill:"PACKET",  act:4, need:0},
+  {skill:"ESCALATE",act:5, need:0},
+  {skill:"DOCUMENT",act:5, need:2}
+];
+
+/* ── Maps ──
+   . floor  , carpet  # wall  D desk  R rack  o door  p plant
+   c cabinet  b boxes  t terminal  w board  L lift  m mat            */
+const MAPS={
+  floor:{name:"TIER 1 - THE FLOOR",act:1,
+    rows:["####################","#w..............w..#","#..DDDD....DDDD....#",
+          "#..DDDD....DDDD..p.#","#,,................#","#,,..DDDD..DDDD....#",
+          "#p...DDDD..DDDD....#","#..................#","#..t.........c.c...#",
+          "#....,,,,,,,,......#","#....,,,,,,,,......#","#.p...........b.b..#",
+          "#.................L#","#..................#","####################"],
+    spawn:{x:9,y:13,dir:"up"}, lift:{x:18,y:12}},
+  inbox:{name:"FLOOR 2 - SECURITY",act:2,
+    rows:["####################","#wwww....#....wwww.#","#........#.........#",
+          "#..DDDD..#..DDDD...#","#..DDDD..#..DDDD.p.#","#........#.........#",
+          "#,,,,....#....,,,,.#","#,,,,....#....,,,,.#","#....c.c.#.c.c.....#",
+          "#........#.........#","#..t.....#......b..#","#........#.........#",
+          "#.p..............#L#","#..................#","####################"],
+    spawn:{x:4,y:11,dir:"up"}, lift:{x:18,y:12}},
+  closet:{name:"FLOOR 3 - THE BENCH",act:3,
+    rows:["####################","#RRRR#....#RRRR....#","#RRRR#....#RRRR..b.#",
+          "#....#,,,,#........#","#....#,,,,#..t.....#","#RRRR#,,,,#........#",
+          "#RRRR#....#RRRR....#","#....#....#RRRR....#","#.........#........#",
+          "#..b.b....#....c.c.#","#........c.c.......#","#.DDDD......DDDD...#",
+          "#.DDDD......DDDD.#L#","#..................#","####################"],
+    spawn:{x:5,y:13,dir:"up"}, lift:{x:18,y:12}},
+  mdf:{name:"FLOOR 4 - MDF",act:4,
+    rows:["####################","#RRRRRRRR#RRRRRRRR.#","#RRRRRRRR#RRRRRRRR.#",
+          "#.,,,,,,.#.,,,,,,,.#","#.,,,,,,.#.,,,,,,,.#","#RRRRRRRR#RRRRRRRR.#",
+          "#RRRRRRRR#RRRRRRRR.#","#........#.........#","#...t....#....c....#",
+          "#........#.........#","#RRRR....#....RRRR.#","#RRRR....#....RRRR.#",
+          "#................#L#","#..................#","####################"],
+    spawn:{x:4,y:13,dir:"up"}, lift:{x:18,y:12}},
+  bridge:{name:"FLOOR 6 - THE BRIDGE",act:5,
+    rows:["####################","#wwwwwwww..wwwwwwww#","#..................#",
+          "#..DDDDDDDDDDDD....#","#..DDDDDDDDDDDD....#","#..................#",
+          "#,,,,,,,,,,,,,,,,..#","#,,,,,,,,,,,,,,,,..#","#..................#",
+          "#..t..........t....#","#..................#","#.p..c.c....c.c..p.#",
+          "#.................L#","#..................#","####################"],
+    spawn:{x:9,y:13,dir:"up"}, lift:{x:18,y:12}}
+};
+
+const NPCS={
+  floor:[
+    {x:9,y:2,spr:"npcA",name:"RENEE",face:"down",kind:"heal",
+     lines:[["RENEE, TEAM LEAD","You're the student, right? Nashville State?"],
+            ["RENEE","Good. Students ask why. The lifers just reboot it and move on."],
+            ["RENEE","Queue's yours. Come back here when you're worn out."]],
+     after:[["RENEE","Take five. The queue will still be there."]]},
+    {x:15,y:6,spr:"npcB",name:"MARCUS",face:"left",kind:"giver",gives:"ISOLATE",act:1,need:0,
+     lines:[["MARCUS, TIER 2","New guy. Here - ISOLATE. Change one thing at a time."],
+            ["MARCUS","Half this floor guesses and calls it troubleshooting. Don't."],
+            ["MARCUS","ASK first. Every move you make after hits harder when you know more."]],
+     after:[["MARCUS","Reboot before reimage. Boring beats clever."]]},
+    {x:5,y:8,spr:"npcC",name:"THE BOARD",face:"right",
+     lines:[["SHIFT BOARD","TICKETS OPEN: 50   SLA BREACHED TODAY: 4"],
+            ["SHIFT BOARD","Every ticket has a clock. Take too many turns and it breaches."],
+            ["SHIFT BOARD","Press M for the building. Press ENTER for your TICKETDEX."]]},
+    {x:17,y:11,spr:"npcA",name:"DEV",face:"left",kind:"giver",gives:"VERIFY",act:1,need:1,
+     lines:[["DEV, SECURITY","Heard you closed one. Take VERIFY."],
+            ["DEV","Any ticket touching an account, you verify identity first. No exceptions, no matter who's asking."],
+            ["DEV","Skip it and the fix doesn't count. That's not the game being harsh. That's the actual rule."]],
+     locked:[["DEV, SECURITY","Close one ticket first. Then we'll talk about account access."]],
+     after:[["DEV","The impatient ones are the ones to verify hardest."]]}
+  ],
+  inbox:[
+    {x:7,y:3,spr:"npcC",name:"PRIYA",face:"down",kind:"giver",gives:"KBSEARCH",act:2,need:0,
+     lines:[["PRIYA, SECURITY","Second floor. Everything up here arrives by email."],
+            ["PRIYA","Take KBSEARCH. Someone has seen this exact message before."],
+            ["PRIYA","Display name is free to set. Read the actual domain."]],
+     after:[["PRIYA","Report it through the button. Protects everyone, not just the one who asked."]]},
+    {x:14,y:7,spr:"npcA",name:"RENEE",face:"left",kind:"heal",
+     lines:[["RENEE","Still here? Most students quit at the phishing floor."]],
+     after:[["RENEE","Sit down a minute. You look like Tuesday."]]}
+  ],
+  closet:[
+    {x:14,y:4,spr:"npcB",name:"KENJI",face:"down",kind:"giver",gives:"HANDSON",act:3,need:0,
+     lines:[["KENJI, BENCH","Down here we don't argue about hardware. We swap it."],
+            ["KENJI","HANDSON is yours. Known-good cable, known-good port, known-good part."],
+            ["KENJI","Substitution is proof. Opinion isn't."]],
+     after:[["KENJI","Reseat it before you condemn it."]]},
+    {x:7,y:11,spr:"npcA",name:"RENEE",face:"right",kind:"heal",
+     lines:[["RENEE","Bench work suits you."]],
+     after:[["RENEE","Rest. Then back to it."]]}
+  ],
+  mdf:[
+    {x:13,y:8,spr:"npcC",name:"OKONKWO",face:"left",kind:"giver",gives:"PACKET",act:4,need:0,
+     lines:[["OKONKWO, NETWORK","You're the one who documented the switch port. Most people just say it's broken."],
+            ["OKONKWO","PACKET. Work up the stack - link, address, gateway, DNS, app."],
+            ["OKONKWO","In that order. Skipping steps is how you spend an hour on a cable."]],
+     after:[["OKONKWO","169.254 means nothing answered. Start at the port."]]},
+    {x:4,y:9,spr:"npcA",name:"RENEE",face:"right",kind:"heal",
+     lines:[["RENEE","Network floor. You've come a long way from batteries."]],
+     after:[["RENEE","Breathe. The stack isn't going anywhere."]]}
+  ],
+  bridge:[
+    {x:5,y:5,spr:"npcB",name:"MARCUS",face:"down",kind:"giver",gives:"ESCALATE",act:5,need:0,
+     lines:[["MARCUS, TIER 2","Sixth floor. This is where they decide what's real."],
+            ["MARCUS","ESCALATE. Knowing your scope is a skill, not an admission."],
+            ["MARCUS","Too early wastes my time. Too late breaks the SLA. Get it right."]],
+     after:[["MARCUS","You escalate with facts, not with a shrug."]]},
+    {x:13,y:5,spr:"npcC",name:"PRIYA",face:"down",kind:"giver",gives:"DOCUMENT",act:5,need:2,
+     lines:[["PRIYA","DOCUMENT. Observed, tried, result, next."],
+            ["PRIYA","Ninety seconds. It's the difference between a handoff and a restart."]],
+     locked:[["PRIYA","Close two up here first. Then I'll show you how we write it up."]],
+     after:[["PRIYA","Write for whoever picks it up at 2am."]]},
+    {x:9,y:11,spr:"npcA",name:"RENEE",face:"up",kind:"heal",
+     lines:[["RENEE","Bridge call in ten. You're on it."],
+            ["RENEE","Not to fix it. To keep the timeline. That's the job now."]],
+     after:[["RENEE","Steady. Facts only."]]}
+  ]
+};
+
+/* ══ STORY ══════════════════════════════════════════════════════════
+   The arc: you have been doing the work for years without the title.
+   Everyone on the floor reads "student" as "not yet". You close the
+   queue and they stop saying it.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const PROLOGUE=[
+  {pal:"screen",lines:[
+    "You have fixed a self-checkout mid-rush with a line of eleven people watching.",
+    "You have called in a broken belt loader with a flight boarding.",
+    "You have cleared a scanner fault at 4am so the shift did not stall."]},
+  {pal:"void",lines:[
+    "None of that came with the title.",
+    "",
+    "Nashville State, A.A.S. in IT, in progress. Network+ booked. Two semesters left."]},
+  {pal:"ACCESS",lines:[
+    "First morning on an actual service desk.",
+    "",
+    "Badge, headset, a chair that will not go up, and a queue already fifty deep."]},
+  {pal:"uibad",lines:[
+    "Someone at the far end of the floor says it without meaning anything by it.",
+    "",
+    "\"They gave the queue to the student?\"",
+    "",
+    "Six floors. Five shifts. Close it."]}
+];
+
+const BEATS={
+  SPOOLER:{title:"NINE TICKETS, ONE PRINTER",pal:"HARDWARE",lines:[
+    "Nine people reported it. One spooler caused it.",
+    "You linked them, restarted the service, and closed nine tickets with one action.",
+    "MARCUS looks at the queue count, then at you, and does not say anything.",
+    "That is the good version of not saying anything."]},
+  SPEARPHISH:{title:"THE ONE THAT KNEW NAMES",pal:"SECURITY",lines:[
+    "The message named a real project and a real manager. Two people had already clicked.",
+    "You checked the domain, verified out of band, and got it pulled from every inbox before lunch.",
+    "PRIYA forwards your write-up to the whole security channel.",
+    "She spells your name right."]},
+  FLEETDOWN:{title:"ELEVEN DESKS",pal:"HARDWARE",lines:[
+    "Eleven docks, one model, one firmware push on Tuesday.",
+    "You did not fix eleven desks. You found the change and rolled it back for the group.",
+    "KENJI: \"Who taught you to check the change log first?\"",
+    "Nobody did. You asked what changed, because that is the question."]},
+  RESOLVER:{title:"THIRTY IN FOUR MINUTES",pal:"NETWORK",lines:[
+    "Thirty tickets, four minutes, thirty different symptoms and one cause.",
+    "You stopped solving and started collecting. Common factor, start time, blast radius, recent change.",
+    "One status post and the queue stopped growing.",
+    "OKONKWO used your timeline on the vendor call. Read it out loud, word for word."]},
+  SEVONE:{title:"THE BRIDGE",pal:"PEOPLE",lines:[
+    "Payroll, on payroll day, ninety minutes to cutoff, sixteen people on the call.",
+    "You did not fix it. You were not supposed to.",
+    "You kept the timeline, held the status page, and handed the post-incident review something they could actually use.",
+    "Afterwards the incident manager asks who was taking the notes."]}
+};
+
+const ENDING=[
+  {pal:"paper",lines:[
+    "End of the fifth shift. The queue is at three.",
+    "",
+    "RENEE drops into the chair next to you and reads the board without looking away from it."]},
+  {pal:"ACCESS",lines:[
+    "\"Five floors. Twenty-five tickets. Two SLA breaches, both flagged before they went red.\"",
+    "",
+    "\"That's a better week than people I've had for two years.\""]},
+  {pal:"uigood",lines:[
+    "\"Somebody said student on your first day. You heard it.\"",
+    "",
+    "\"You are a student. That's why you asked what changed instead of guessing. Keep that part.\""]},
+  {pal:"screen",lines:[
+    "SHIFT COMPLETE.",
+    "",
+    "Every ticket you closed is in the TICKETDEX with the reasoning behind it.",
+    "",
+    "Press R for the resume. Everything else is on the desk."]}
+];
+
+const JOURNAL=[
+  {key:"start",t:"FIRST MORNING",
+   b:"A.A.S. IT in progress at Nashville State, Network+ booked. Fifty tickets and somebody on the floor calling me the student."},
+  {key:"SPOOLER",t:"NINE REPORTERS",
+   b:"Same symptom, many users means look upstream. Restarted the spooler, closed nine tickets with one action."},
+  {key:"SPEARPHISH",t:"JUDGE THE ASK",
+   b:"When the writing is convincing, judge the request instead. Verified out of band, got it pulled tenant-wide."},
+  {key:"FLEETDOWN",t:"WHAT CHANGED",
+   b:"Eleven docks, one firmware push. Found the change and rolled it back for the group instead of fixing eleven desks."},
+  {key:"RESOLVER",t:"STOP SOLVING",
+   b:"In a P1 the deliverable is information. Common factor, start time, blast radius, recent change. One status post."},
+  {key:"SEVONE",t:"KEEP THE TIMELINE",
+   b:"On a bridge call, be the one taking notes. Facts and timeline, no speculation on an open line."},
+  {key:"end",t:"WHAT I HAVE",
+   b:"Twenty-five tickets closed with the reasoning written down. Student is the reason I ask why, not a reason to wait."}
+];
+
+/* ── Portfolio content, shown in the RESUME overlay ── */
+const ME={
+  name:"JAYLEN SHERRILL",
+  role:"IT SUPPORT",
+  where:"Nashville, TN",
+  email:"jaylenbaylen@icloud.com",
+  phone:"615-910-9432",
+  linkedin:"https://www.linkedin.com/in/jaylen-sherrill-b91636327/",
+  edu:{school:"Nashville State Community College",
+       award:"A.A.S., Information Technology (in progress)",when:"2024 - present"},
+  certs:[{n:"CompTIA Network+",s:"in progress, exam planned 2026"}],
+  project:{
+    n:"The Help Desk Simulator",
+    d:"Six browser-based training simulations that teach IT support fundamentals to people with no prior background: ticket triage, SLA prioritisation, phishing identification, escalation criteria and infrastructure basics.",
+    b:["Flagship module runs a live help desk shift with running SLA timers. Every decision is scored and explained, reinforcing identity verification before account changes and checking simple causes before escalating.",
+       "Further modules cover phishing and social engineering recognition, an append-only ticket audit trail modelled on compliance review practice, small-scale infrastructure design, and a 28-term reference trainer for core IT vocabulary."]},
+  jobs:[
+    {n:"Warehouse Associate",o:"Amazon",l:"Nashville, TN",w:"May 2025 - present",
+     b:["Operate handheld scanning devices and internal inventory systems, troubleshooting device and scanning errors in real time to prevent operational delays.",
+        "Escalate technical and system discrepancies through proper reporting channels, coordinating with support teams to resolve issues quickly.",
+        "Maintain high performance and accuracy metrics in a fast-paced, deadline-driven environment."]},
+    {n:"Ramp Agent",o:"United Ground Express",l:"Nashville, TN",w:"Nov 2024 - Mar 2025",
+     b:["Supported airline ground operations, coordinating with operations teams over internal communication systems.",
+        "Reported equipment malfunctions and operational issues promptly to keep flights on schedule.",
+        "Followed strict procedural, safety and accuracy standards required in a regulated aviation setting.",
+        "Performed effectively in high-pressure, time-sensitive situations requiring structured problem resolution."]},
+    {n:"Front End Associate",o:"Walmart",l:"Mount Juliet, TN",w:"Mar 2024 - Nov 2024",
+     b:["Provided front-line technical support on self-checkout and POS systems, troubleshooting payment processing and scanning errors.",
+        "Documented recurring system irregularities and maintained transaction accuracy in a high-volume retail environment."]}
+  ]
+};
+
+/* ══ AUDIO ══════════════════════════════════════════════════════════
+   Two pulse voices, a triangle bass and a noise channel, which is
+   roughly the Game Boy's voice allocation. Everything is synthesised
+   at runtime; there are no audio files to load or host.
+   ═══════════════════════════════════════════════════════════════════ */
+const SND={ctx:null, master:null, on:true, ready:false,
+  track:null, next:0, step:0, timer:null};
+
+/* Must be called from inside a real user-gesture handler. Browsers create
+   the context in "suspended" state otherwise and it never starts. */
+function audioInit(){
+  try{
+    if(!SND.ctx){
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC){ SND.blocked="no Web Audio in this browser"; return; }
+      SND.ctx=new AC();
+      SND.master=SND.ctx.createGain();
+      SND.master.gain.value=SND.on?0.16:0;
+      SND.master.connect(SND.ctx.destination);
+      // silent one-sample buffer: unlocks output on iOS Safari
+      const b=SND.ctx.createBuffer(1,1,22050);
+      const src=SND.ctx.createBufferSource();
+      src.buffer=b; src.connect(SND.ctx.destination); src.start(0);
+    }
+    if(SND.ctx.state!=="running"){
+      const p=SND.ctx.resume();
+      if(p&&p.then) p.then(()=>{ SND.ready=true; drain(); });
+    }
+    if(SND.ctx.state==="running"||SND.ctx.state===undefined){ SND.ready=true; drain(); }
+  }catch(e){ SND.blocked=String(e&&e.message||e); }
+}
+function drain(){
+  if(!SND.timer) SND.timer=setInterval(schedule,25);
+  if(SND.pending){ const t=SND.pending; SND.pending=null; music(t); }
+}
+function audioState(){
+  if(SND.blocked) return "BLOCKED";
+  if(!SND.ctx) return "OFF";
+  if(SND.ctx.state!=="running") return "OFF";
+  return SND.on?"ON":"MUTED";
+}
+function audioToggle(){
+  SND.on=!SND.on;
+  if(SND.master&&SND.ctx) SND.master.gain.setTargetAtTime(SND.on?0.16:0, SND.ctx.currentTime, 0.02);
+  return SND.on;
+}
+function mtof(m){ return 440*Math.pow(2,(m-69)/12); }
+
+/* one pulse/triangle note */
+function tone(midi,t0,dur,wave,vol,slide){
+  if(!SND.ready) return;
+  const c=SND.ctx, o=c.createOscillator(), g=c.createGain();
+  o.type=wave||"square";
+  const f=mtof(midi);
+  o.frequency.setValueAtTime(f,t0);
+  if(slide) o.frequency.exponentialRampToValueAtTime(mtof(midi+slide), t0+dur);
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.exponentialRampToValueAtTime(vol||0.18, t0+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  o.connect(g); g.connect(SND.master);
+  o.start(t0); o.stop(t0+dur+0.02);
+}
+/* noise burst for percussion and impacts */
+function noise(t0,dur,vol,hp){
+  if(!SND.ready) return;
+  const c=SND.ctx, n=Math.floor(c.sampleRate*dur);
+  const buf=c.createBuffer(1,Math.max(1,n),c.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  const src=c.createBufferSource(); src.buffer=buf;
+  const g=c.createGain(); g.gain.value=vol||0.1;
+  const f=c.createBiquadFilter(); f.type=hp?"highpass":"lowpass"; f.frequency.value=hp||2200;
+  src.connect(f); f.connect(g); g.connect(SND.master);
+  src.start(t0); src.stop(t0+dur+0.02);
+}
+
+/* ── sound effects ── */
+const SFX={
+  cursor:  t=>tone(84,t,0.05,"square",0.10),
+  confirm: t=>{tone(76,t,0.06,"square",0.13); tone(83,t+0.05,0.09,"square",0.13);},
+  cancel:  t=>{tone(72,t,0.06,"square",0.11); tone(65,t+0.05,0.08,"square",0.11);},
+  text:    t=>tone(88,t,0.018,"square",0.045),
+  bump:    t=>noise(t,0.06,0.07,null),
+  door:    t=>{tone(60,t,0.10,"triangle",0.14); tone(67,t+0.09,0.14,"triangle",0.12);},
+  deny:    t=>{tone(58,t,0.10,"sawtooth",0.11); tone(53,t+0.10,0.18,"sawtooth",0.11);},
+  encounter:t=>{for(let i=0;i<6;i++) tone(60+i*3,t+i*0.055,0.06,"square",0.14);
+                noise(t+0.34,0.30,0.12,null);},
+  collect: t=>{tone(72,t,0.05,"square",0.12); tone(79,t+0.05,0.05,"square",0.12); tone(84,t+0.10,0.10,"square",0.12);},
+  hit:     t=>{noise(t,0.14,0.13,null); tone(45,t,0.14,"sawtooth",0.10,-6);},
+  crit:    t=>{noise(t,0.22,0.17,null); tone(50,t,0.22,"sawtooth",0.13,-9); tone(57,t+0.04,0.18,"square",0.10,-9);},
+  hurt:    t=>{tone(52,t,0.16,"sawtooth",0.12,-5); noise(t,0.10,0.08,null);},
+  logged:  t=>{[72,76,79,84].forEach((n,i)=>tone(n,t+i*0.07,0.16,"square",0.13));},
+  levelup: t=>{[72,76,79,84,88].forEach((n,i)=>tone(n,t+i*0.06,0.20,"square",0.14));},
+  faint:   t=>{tone(64,t,0.5,"triangle",0.14,-14);},
+  page:    t=>tone(80,t,0.03,"square",0.06)
+};
+let _lastSfx=0;
+function sfx(name){
+  if(!SND.ready||!SND.on) return;
+  const f=SFX[name]; if(!f) return;
+  const now=SND.ctx.currentTime;
+  if(name==="text"||name==="page"){ if(now-_lastSfx<0.028) return; _lastSfx=now; }
+  f(now+0.001);
+}
+
+/* ── music: 16 steps per bar, arrays of MIDI (0 = rest) ── */
+const A=0; // rest, reads better in the patterns below
+const TRACKS={
+  title:{bpm:76, ch:[
+    {w:"square",v:0.10,n:[69,A,A,A,72,A,A,A,76,A,A,A,72,A,A,A, 71,A,A,A,74,A,A,A,79,A,A,A,74,A,A,A]},
+    {w:"triangle",v:0.14,n:[45,A,A,A,A,A,A,A,45,A,A,A,A,A,A,A, 43,A,A,A,A,A,A,A,43,A,A,A,A,A,A,A]},
+    {w:"noise",v:0.00,n:new Array(32).fill(A)}
+  ]},
+  world:{bpm:126, ch:[
+    {w:"square",v:0.09,n:[69,A,72,A,76,A,72,A, 74,A,72,A,69,A,A,A,
+                          67,A,71,A,74,A,71,A, 72,A,71,A,69,A,A,A]},
+    {w:"square",v:0.05,n:[A,A,A,A,64,A,A,A,A,A,A,A,62,A,A,A,
+                          A,A,A,A,62,A,A,A,A,A,A,A,64,A,A,A]},
+    {w:"triangle",v:0.13,n:[45,A,A,45,A,A,45,A, 43,A,A,43,A,A,43,A,
+                            41,A,A,41,A,A,41,A, 43,A,A,43,A,A,45,A]},
+    {w:"noise",v:0.055,n:[1,A,A,A,1,A,A,A,1,A,A,A,1,A,1,A,
+                          1,A,A,A,1,A,A,A,1,A,A,A,1,A,1,A]}
+  ]},
+  battle:{bpm:158, ch:[
+    {w:"square",v:0.10,n:[69,71,72,A,76,A,72,A, 74,A,72,71,69,A,A,A,
+                          68,70,71,A,75,A,71,A, 73,A,71,70,68,A,A,A]},
+    {w:"square",v:0.06,n:[A,A,64,A,A,A,64,A,A,A,62,A,A,A,62,A,
+                          A,A,63,A,A,A,63,A,A,A,61,A,A,A,61,A]},
+    {w:"triangle",v:0.15,n:[45,45,A,45,A,45,A,45, 43,43,A,43,A,43,A,43,
+                            44,44,A,44,A,44,A,44, 42,42,A,42,A,42,A,42]},
+    {w:"noise",v:0.07,n:[1,A,1,A,1,A,1,A,1,A,1,A,1,A,1,1,
+                         1,A,1,A,1,A,1,A,1,A,1,A,1,A,1,1]}
+  ]},
+  boss:{bpm:172, ch:[
+    {w:"square",v:0.11,n:[64,A,63,A,64,A,67,A, 66,A,64,A,63,A,A,A,
+                          62,A,61,A,62,A,66,A, 64,A,63,A,61,A,A,A]},
+    {w:"sawtooth",v:0.05,n:[A,52,A,51,A,52,A,55, A,54,A,52,A,51,A,A,
+                            A,50,A,49,A,50,A,54, A,52,A,51,A,49,A,A]},
+    {w:"triangle",v:0.16,n:[40,40,40,A,40,40,A,40, 39,39,39,A,39,39,A,39,
+                            38,38,38,A,38,38,A,38, 39,39,39,A,39,39,A,39]},
+    {w:"noise",v:0.085,n:[1,1,A,1,1,A,1,1,1,1,A,1,1,A,1,1,
+                          1,1,A,1,1,A,1,1,1,1,A,1,1,A,1,1]}
+  ]},
+  story:{bpm:64, ch:[
+    {w:"triangle",v:0.09,n:[57,A,A,A,A,A,A,A, 60,A,A,A,A,A,A,A,
+                            55,A,A,A,A,A,A,A, 59,A,A,A,A,A,A,A]},
+    {w:"triangle",v:0.06,n:[A,A,A,A,A,A,A,A, 64,A,A,A,A,A,A,A,
+                            A,A,A,A,A,A,A,A, 62,A,A,A,A,A,A,A]},
+    {w:"noise",v:0.00,n:new Array(32).fill(A)}
+  ]},
+  win:{bpm:150, loop:false, ch:[
+    {w:"square",v:0.13,n:[72,72,72,A,79,A,A,A, 76,A,79,A,84,A,A,A,
+                          A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A]},
+    {w:"triangle",v:0.14,n:[48,48,48,A,52,A,A,A, 55,A,52,A,60,A,A,A,
+                            A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A]},
+    {w:"noise",v:0.06,n:[1,1,1,A,1,A,A,A,1,A,1,A,1,A,A,A,
+                         A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A]}
+  ]}
+};
+
+let _queued=null;
+function music(name){
+  if(!SND.ready||!SND.ctx||SND.ctx.state!=="running"){ SND.pending=name; return; }
+  if(SND.trackName===name) return;
+  SND.trackName=name;
+  SND.track=TRACKS[name]||null;
+  SND.step=0;
+  SND.next=SND.ctx.currentTime+0.06;
+  if(!SND.timer) SND.timer=setInterval(schedule,25);
+}
+function schedule(){
+  if(!SND.ready||!SND.on||!SND.track) return;
+  const t=SND.track, spb=60/t.bpm/4;          // sixteenth notes
+  const horizon=SND.ctx.currentTime+0.14;
+  while(SND.next<horizon){
+    const s=SND.step % t.ch[0].n.length;
+    for(const c of t.ch){
+      const v=c.n[s];
+      if(!v) continue;
+      if(c.w==="noise") noise(SND.next,0.045,c.v,4000);
+      else tone(v,SND.next,spb*(c.w==="triangle"?1.6:1.25),c.w,c.v);
+    }
+    SND.next+=spb; SND.step++;
+    if(t.loop===false && SND.step>=t.ch[0].n.length){
+      SND.trackName=null; SND.track=null;
+      if(_queued){ const q=_queued; _queued=null; setTimeout(()=>music(q),20); }
+      break;
+    }
+  }
+}
+function musicThen(short,back){ _queued=back; music(short); }
+
+/* ══ STATE ══════════════════════════════════════════════════════════ */
+const S={
+  scene:"title", map:"floor",
+  tx:9,ty:13, ox:0,oy:0, dir:"down", step:0, walking:false, anim:0,
+  party:[], log:[], dex:[], badges:[], shift:1, journal:["start"], cut:null, bumped:0,
+  act:1, flags:{}, cleared:{},
+  msg:null, menuIdx:0, subIdx:0, scroll:0,
+  battle:null, tick:0, fade:0, notice:null, noticeT:0
+};
+const keys={};
+const PRESSED={};
+addEventListener("keydown",e=>{
+  const k=norm(e.key); if(!k)return; e.preventDefault();
+  if(!keys[k]) PRESSED[k]=true; keys[k]=true;
+});
+addEventListener("keyup",e=>{ const k=norm(e.key); if(k){keys[k]=false;} });
+function norm(k){
+  k=k.toLowerCase();
+  if(k==="arrowup"||k==="w")return"up";
+  if(k==="arrowdown"||k==="s")return"down";
+  if(k==="arrowleft"||k==="a")return"left";
+  if(k==="arrowright"||k==="d")return"right";
+  if(k==="z"||k===" ")return"ok";
+  if(k==="x"||k==="escape"||k==="backspace")return"back";
+  if(k==="enter")return"menu";
+  if(k==="m")return"map";
+  return null;
+}
+function hit(k){ if(PRESSED[k]){PRESSED[k]=false;return true;} return false; }
+function clearPressed(){ for(const k in PRESSED) PRESSED[k]=false; }
+
+/* ══ SAVE ═══════════════════════════════════════════════════════════ */
+async function save(){
+  const data={map:S.map,tx:S.tx,ty:S.ty,dir:S.dir,party:S.party,log:S.log,dex:S.dex,
+    badges:S.badges,journal:S.journal,shift:S.shift,act:S.act,flags:S.flags,cleared:S.cleared};
+  try{ if(window.storage) await window.storage.set("hdq:save",JSON.stringify(data)); }
+  catch(e){ /* storage unavailable; session-only play */ }
+}
+async function load(){
+  try{
+    if(!window.storage) return false;
+    const r=await window.storage.get("hdq:save");
+    if(!r) return false;
+    const d=JSON.parse(r.value); Object.assign(S,d); return true;
+  }catch(e){ return false; }
+}
+
+/* ══ MAP HELPERS ════════════════════════════════════════════════════ */
+const TKEY={".":"floor",",":"carpet","#":"wall","D":"desk","R":"rack","o":"door",
+  "p":"plant","c":"cabinet","b":"boxes","t":"term","w":"board","L":"lift","m":"mat"};
+function mp(){ return MAPS[S.map]; }
+function tileAt(x,y){
+  const r=mp().rows;
+  if(y<0||y>=r.length||x<0||x>=r[0].length) return "#";
+  return r[y][x];
+}
+function solidAt(x,y){
+  const t=TKEY[tileAt(x,y)]||"floor";
+  if(SOLID.has(t)) return true;
+  for(const n of (NPCS[S.map]||[])) if(n.x===x&&n.y===y) return true;
+  return false;
+}
+function npcAt(x,y){ return (NPCS[S.map]||[]).find(n=>n.x===x&&n.y===y); }
+function actOf(map){ return (MAPS[map]&&MAPS[map].act)||1; }
+function actTickets(){ return ACTS[actOf(S.map)-1].tickets; }
+function openTickets(){ return actTickets().filter(t=>!S.cleared[t]); }
+function encAt(x,y){
+  const t=TKEY[tileAt(x,y)];
+  if(t!=="carpet") return null;
+  const open=openTickets();
+  if(!open.length) return null;
+  const idx=(x*7+y*13)%open.length;
+  return {f:open[idx]};
+}
+function camera(){
+  const mw=mp().rows[0].length*TS, mh=mp().rows.length*TS;
+  let cx=S.tx*TS+S.ox+8-W/2, cy=S.ty*TS+S.oy+8-H/2;
+  cx=Math.max(0,Math.min(mw-W,cx)); cy=Math.max(0,Math.min(mh-H,cy));
+  return {cx:Math.round(cx),cy:Math.round(cy)};
+}
+
+/* ══ DIALOGUE ═══════════════════════════════════════════════════════ */
+function say(pages,onDone){
+  const out=[];
+  for(const p of pages){
+    const ls=wrap(p[1],23);
+    for(let i=0;i<ls.length;i+=3) out.push([i===0?p[0]:"",ls.slice(i,i+3).join(" ")]);
+  }
+  S.msg={pages:out,i:0,ch:0,done:false,onDone:onDone||null};
+  S.scene="dialog"; clearPressed();
+}
+function drawBox(x,y,w,h,pal){
+  usePal(pal||"ui");
+  rect(x,y,w,h,0); frame(x,y,w,h,2); frame(x+2,y+2,w-4,h-4,1);
+}
+function drawMsg(){
+  const p=S.msg.pages[S.msg.i]; if(!p)return;
+  const who=p[0], lines=wrap(p[1],23).slice(0,3);
+  drawBox(0,92,160,52,"ui");
+  if(who){ usePal("uiwarn"); const w=textw(who)+10; rect(4,84,w,12,0); frame(4,84,w,12,2); text(who,9,86,3); }
+  usePal("ui"); let shown=S.msg.ch, y=100;
+  for(const ln of lines){
+    text(ln.substring(0,Math.max(0,shown)),9,y,3);
+    shown-=ln.length; y+=12;
+    if(shown<=0) break;
+  }
+  if(S.msg.done && (S.tick>>4)%2===0){ usePal("uiwarn"); rect(149,133,4,3,3); rect(150,136,2,1,3); }
+}
+function msgLen(p){ return wrap(p[1],23).slice(0,3).join("").length; }
+function updMsg(){
+  const p=S.msg.pages[S.msg.i];
+  const total=msgLen(p);
+  if(!S.msg.done){
+    const before=S.msg.ch;
+    S.msg.ch+= keys.ok?3:1;
+    if(S.msg.ch>before) sfx("text");
+    if(S.msg.ch>=total){S.msg.ch=total;S.msg.done=true;}
+  } else if(hit("ok")||hit("back")){
+    sfx("page");
+    S.msg.i++; S.msg.ch=0; S.msg.done=false;
+    if(S.msg.i>=S.msg.pages.length){
+      const cb=S.msg.onDone; S.msg=null; S.scene="world";
+      if(cb) cb();
+    }
+  }
+}
+function story(cards,onDone){
+  music("story");
+  const pages=[];
+  for(const c of cards){
+    const avail=c.title?96:104;      // pixels between header and footer rule
+    let cur=[], h=0, first=true;
+    for(const raw of c.lines){
+      const chunk = raw==="" ? [""] : wrap(raw,24);
+      for(const ln of chunk){
+        const lh = ln==="" ? 6 : 11;
+        if(h+lh>avail && cur.length){
+          pages.push({title:first?c.title:null,pal:c.pal,lines:cur});
+          cur=[]; h=0; first=false;
+          if(ln==="") continue;      // don't lead a page with a blank
+        }
+        cur.push(ln); h+=lh;
+      }
+    }
+    if(cur.length) pages.push({title:first?c.title:null,pal:c.pal,lines:cur});
+    // orphan control: never end a card on a single dangling line
+    if(pages.length>=2){
+      const last=pages[pages.length-1], prev=pages[pages.length-2];
+      if(last.lines.length===1 && prev.lines.length>3 && prev.pal===last.pal){
+        last.lines.unshift(prev.lines.pop());
+        if(prev.lines[prev.lines.length-1]==="") prev.lines.pop();
+      }
+    }
+  }
+  S.cut={cards:pages,i:0,ch:0,done:false,onDone:onDone||null};
+  S.scene="story"; clearPressed();
+}
+function cutLines(c){ return c.lines; }
+function drawStory(){
+  const c=S.cut.cards[S.cut.i];
+  clear(0,c.pal||"ui");
+  usePal(c.pal||"ui");
+  rect(0,0,W,3,1); rect(0,H-3,W,3,1);
+  for(let i=0;i<W;i+=4) px(i,6,1);
+  for(let i=0;i<W;i+=4) px(i,H-7,1);
+  if(c.title){ rect(6,12,textw(c.title)+8,12,1); text(c.title,10,15,3); }
+  let shown=S.cut.ch, y=c.title?32:26;
+  for(const ln of c.lines){
+    if(ln===""){ y+=6; continue; }
+    text(ln.substring(0,Math.max(0,shown)),10,y,3);
+    shown-=ln.length; y+=11;
+    if(shown<=0) break;
+  }
+  if(S.cut.done&&(S.tick>>4)%2===0){ rect(146,H-14,5,4,3); rect(147,H-10,3,1,3); }
+}
+function updStory(){
+  const c=S.cut.cards[S.cut.i];
+  const total=c.lines.join("").length;
+  if(!S.cut.done){
+    const b4=S.cut.ch;
+    S.cut.ch+=keys.ok?4:1;
+    if(S.cut.ch>b4) sfx("text");
+    if(S.cut.ch>=total){S.cut.ch=total;S.cut.done=true;}
+  } else if(hit("ok")||hit("back")){
+    sfx("page");
+    S.cut.i++; S.cut.ch=0; S.cut.done=false;
+    if(S.cut.i>=S.cut.cards.length){
+      const cb=S.cut.onDone; S.cut=null; S.scene="world"; music("world");
+      if(cb) cb();
+    }
+  }
+}
+function unlock(key){
+  if(!JOURNAL.some(j=>j.key===key)) return;
+  if(!S.journal.includes(key)) S.journal.push(key);
+}
+function beat(fid,then){
+  const b=BEATS[fid];
+  unlock(fid);
+  if(!b){ if(then)then(); return; }
+  story([{title:b.title,pal:b.pal,lines:b.lines}],then);
+}
+function notice(t){ S.notice=t; S.noticeT=110; }
+
+/* ══ WORLD ══════════════════════════════════════════════════════════ */
+function updWorld(){
+  if(S.bumped>0)S.bumped--;
+  if(hit("map")){ sfx("confirm"); S.mapFrom="world"; S.scene="map"; return; }
+  if(hit("menu")){ sfx("confirm"); S.scene="menu"; S.menuIdx=0; return; }
+  if(S.walking){
+    S.step+=2; const d=S.step;
+    if(S.dir==="up")S.oy=-d; if(S.dir==="down")S.oy=d;
+    if(S.dir==="left")S.ox=-d; if(S.dir==="right")S.ox=d;
+    S.anim=(S.step>4&&S.step<13)?1:0;
+    if(S.step>=16){
+      S.walking=false; S.step=0; S.ox=0; S.oy=0; S.anim=0;
+      if(S.dir==="up")S.ty--; if(S.dir==="down")S.ty++;
+      if(S.dir==="left")S.tx--; if(S.dir==="right")S.tx++;
+      arrive();
+    }
+    return;
+  }
+  if(hit("ok")){ interact(); return; }
+  let d=null;
+  if(keys.up)d="up"; else if(keys.down)d="down";
+  else if(keys.left)d="left"; else if(keys.right)d="right";
+  if(d){
+    S.dir=d;
+    const n=step(S.tx,S.ty,d);
+    if(!solidAt(n.x,n.y)) S.walking=true;
+    else if(!S.bumped){ sfx("bump"); S.bumped=6; }
+  }
+}
+function step(x,y,d){
+  if(d==="up")return{x,y:y-1}; if(d==="down")return{x,y:y+1};
+  if(d==="left")return{x:x-1,y}; return{x:x+1,y};
+}
+function arrive(){
+  const m=mp();
+  const dr=(m.doors||[]).find(d=>d.x===S.tx&&d.y===S.ty);
+  if(dr){ sfx("door"); S.map=dr.to; S.tx=dr.tx; S.ty=dr.ty; S.seen[dr.to]=true; notice(MAPS[S.map].name); save(); return; }
+  if(m.lift&&m.lift.x===S.tx&&m.lift.y===S.ty){ tryLift(); return; }
+  const e=encAt(S.tx,S.ty);
+  if(e){ sfx("encounter"); startTicket(e.f); }
+}
+function interact(){
+  const n=step(S.tx,S.ty,S.dir);
+  const npc=npcAt(n.x,n.y);
+  if(npc){ talkTo(npc); return; }
+  const t=TKEY[tileAt(n.x,n.y)];
+  if(t==="term"){ termUse(); return; }
+  else if(t==="board") say([["SHIFT BOARD","Observed, tried, result, next. Four lines on every ticket."]]);
+  else if(t==="rack") say([["RACK","Patch panel, label maker, and three cables nobody will admit to."]]);
+  else if(t==="cabinet") say([["SPARES","Known-good cables and a loaner dock. Substitution is proof."]]);
+  else if(t==="boxes") say([["BOXES","New machines, still shrink-wrapped. None of them imaged yet."]]);
+  else if(t==="desk") say([["DESK","Someone's lunch and a sticky note that just says DO NOT REBOOT."]]);
+  else if(t==="lift") tryLift();
+}
+function talkTo(npc){
+  npc.face=opposite(S.dir);
+  if(npc.kind==="giver"&&!S.flags["gave_"+npc.gives]){
+    const done=actTickets().filter(x=>S.cleared[x]).length;
+    if(done<(npc.need||0)){ sfx("deny"); say(npc.locked||npc.lines); return; }
+    say(npc.lines,()=>{
+      S.flags["gave_"+npc.gives]=true;
+      addSkill(npc.gives);
+      const c=SKILLS[npc.gives];
+      say([["",c.name+" learned!"],
+           ["",c.name+" is a "+c.type+" skill. Tickets weak to "+TSHORT[c.type]+" take double."],
+           ["",c.dex]]);
+    });
+    return;
+  }
+  if(npc.kind==="heal"&&S.party.length&&S.flags["met_"+npc.name]){
+    const hurt=S.party.some(p=>p.hp<p.max);
+    S.party.forEach(p=>p.hp=p.max);
+    sfx("levelup");
+    say(hurt?[["RENEE","Sit down. Water, then back at it."],["","Your SKILLS are back to full."]]
+            :[["RENEE","You're fine. Queue's open."]]);
+    return;
+  }
+  const met=npc.kind==="giver"?S.flags["gave_"+npc.gives]:S.flags["met_"+npc.name];
+  S.flags["met_"+npc.name]=true;
+  say(met&&npc.after?npc.after:npc.lines);
+}
+function opposite(d){ return {up:"down",down:"up",left:"right",right:"left"}[d]; }
+
+function actDone(a){
+  const A2=ACTS[a-1];
+  return A2.tickets.every(t=>S.cleared[t]) && S.cleared[A2.boss];
+}
+function bossReady(){
+  const A2=ACTS[actOf(S.map)-1];
+  return A2.tickets.filter(t=>S.cleared[t]).length>=3 && !S.cleared[A2.boss];
+}
+function termUse(){
+  const A2=ACTS[actOf(S.map)-1];
+  const done=A2.tickets.filter(t=>S.cleared[t]).length;
+  if(S.cleared[A2.boss]){ say([["QUEUE","Open on this floor: 0. Nice shift."]]); return; }
+  if(done>=3){
+    say([["QUEUE","A cluster just came in. Same symptom, many users."],
+         ["QUEUE","That is not "+A2.tickets.length+" tickets. That is one incident."]],
+        ()=>startTicket(A2.boss));
+  } else {
+    sfx("deny");
+    say([["QUEUE","Open on this floor: "+(A2.tickets.length-done)+"."],
+         ["QUEUE","Work "+(3-done)+" more before the cluster shows up."]]);
+  }
+}
+function tryLift(){
+  const cur=actOf(S.map);
+  if(!actDone(cur)){
+    sfx("deny");
+    say([["LIFT","Floor "+ACTS[cur-1].floor+" is not clear yet."],
+         ["LIFT","Close the queue and the incident, then ride up."]]);
+    return;
+  }
+  if(cur>=5){
+    if(S.flags.ending){ say([["LIFT","Shift complete. Press R for the resume."]]); return; }
+    S.flags.ending=true; unlock("end");
+    story(ENDING.map(c=>({pal:c.pal,lines:c.lines})),()=>{ S.scene="hof"; });
+    return;
+  }
+  const nx=ACTS[cur];
+  S.act=Math.max(S.act,cur+1);
+  S.map=nx.map; const sp=MAPS[nx.map].spawn;
+  S.tx=sp.x; S.ty=sp.y; S.dir=sp.dir; S.ox=0; S.oy=0;
+  sfx("door"); notice(MAPS[S.map].name); save();
+  say([["","FLOOR "+nx.floor+" - "+nx.name],["",nx.where+". "+nx.goal]]);
+}
+
+function drawWorld(){
+  clear(3);
+  const {cx,cy}=camera();
+  const m=mp();
+  const x0=Math.floor(cx/TS), y0=Math.floor(cy/TS);
+  for(let j=-1;j<=H/TS+1;j++)for(let i=-1;i<=W/TS+1;i++){
+    const tx=x0+i, ty=y0+j;
+    const t=TKEY[tileAt(tx,ty)]||"floor";
+    const base=(t==="carpet")?"carpet":"floor";
+    drawTile(base,tx*TS-cx,ty*TS-cy);
+    if(t!=="floor"&&t!=="carpet") drawTile(t,tx*TS-cx,ty*TS-cy);
+  }
+  // encounter shimmer
+  if(openTickets().length){
+    usePal("uiwarn");
+    for(let j=-1;j<=H/TS+1;j++)for(let i=-1;i<=W/TS+1;i++){
+      const tx=x0+i, ty=y0+j;
+      if(TKEY[tileAt(tx,ty)]!=="carpet") continue;
+      const sx=tx*TS-cx, sy=ty*TS-cy, ph=((S.tick>>4)+tx+ty)%4;
+      if(ph<2){ rect(sx+7,sy+7,3,3,3); } else { rect(sx+8,sy+8,1,1,3); }
+    }
+  }
+  const drawables=[];
+  for(const n of (NPCS[S.map]||[])) drawables.push({y:n.y*TS,f:()=>{
+    const a=CH[n.spr][0]; drawSprite(a,n.x*TS-cx,n.y*TS-cy,false,n.spr);
+  }});
+  drawables.push({y:S.ty*TS+S.oy+1,f:()=>{
+    let set,flip=false;
+    if(S.dir==="down")set=CH.pdown; else if(S.dir==="up")set=CH.pup;
+    else {set=CH.pside; flip=(S.dir==="left");}
+    drawSprite(set[S.anim],S.tx*TS+S.ox-cx,S.ty*TS+S.oy-cy,flip,"hero");
+  }});
+  drawables.sort((a,b)=>a.y-b.y).forEach(d=>d.f());
+
+  if(S.noticeT>0){
+    usePal("ui");
+    const t=mp().name, w=textw(t)+12;
+    rect(4,4,w,14,0); frame(4,4,w,14,2); text(t,10,7,3);
+    S.noticeT--;
+  }
+}
+
+/* ══ PARTY / SHIFT LOG ══════════════════════════════════════════════ */
+function addSkill(id){
+  const c=SKILLS[id];
+  S.party.push({id,name:c.name,type:c.type,lvl:1,hp:c.hp,max:c.hp,atk:c.atk,
+    moves:c.moves.slice(),xp:0});
+}
+function alive(){ return S.party.filter(p=>p.hp>0); }
+function today(){ const d=new Date(); return d.toISOString().slice(0,10); }
+
+function closeTicket(tid,rec){
+  const t=TICKETS[tid];
+  S.log.push({id:"T-"+String(S.log.length+1).padStart(3,"0"),
+    ticket:t.name, cat:t.cat, act:t.act,
+    turns:rec.turns, sla:rec.sla, fcr:rec.fcr, verified:rec.verified,
+    escalated:rec.escalated, documented:rec.documented, when:today()});
+  S.cleared[tid]=true;
+  if(!S.dex.includes(tid)) S.dex.push(tid);
+}
+function metrics(){
+  const n=S.log.length||1;
+  return {
+    closed:S.log.length,
+    slaMet:Math.round(100*S.log.filter(l=>l.sla).length/n),
+    fcr:Math.round(100*S.log.filter(l=>l.fcr).length/n),
+    docd:Math.round(100*S.log.filter(l=>l.documented).length/n)
+  };
+}
+
+/* ══ BATTLE ═════════════════════════════════════════════════════════
+   The method is the mechanic. Ask builds detail; Isolate and Fix scale
+   with it. Account tickets fail without Verify no matter what you do.
+   Out-of-scope tickets are only closed by Escalate. The SLA clock runs
+   the whole time.
+   ═══════════════════════════════════════════════════════════════════ */
+function startTicket(tid){
+  if(!S.party.length){ say([["","You have no SKILLS yet. Talk to MARCUS on the floor."]]); return; }
+  const t=TICKETS[tid];
+  S.battle={tid,f:t,hp:t.hp,max:t.hp,atk:t.atk,info:0,verified:false,
+    me:alive()[0],turns:0,sla:t.sla,escalated:false,documented:false,
+    phase:"intro",menu:0,shake:0,flash:0};
+  S.scene="battle"; clearPressed();
+  music(t.boss?"boss":"battle");
+  bmsg("TICKET "+t.name+" - "+t.cat+"\n"+t.user,()=>{
+    bmsg(t.intro,()=>{ S.battle.phase="menu"; });
+  });
+}
+function bmsg(t,then){ const b=S.battle; b.text=t; b.ch=0; b.tdone=false; b.then=then||null; b.phase="msg"; }
+
+function doMove(mv){
+  const b=S.battle, me=b.me, M=MOVES[mv], t=b.f;
+  const weak=(me.type===t.weak);
+  let d=0, lines=[];
+  b.turns++;
+
+  if(M.kind==="ask"){
+    b.info++;
+    d=M.pow;
+    lines.push(me.name+" asked. Detail on hand: "+b.info+".");
+    if(b.info===2) lines.push("Tip: "+t.tip);
+  }
+  else if(M.kind==="verify"){
+    if(t.account){
+      b.verified=true; d=M.pow+10;
+      lines.push("Identity confirmed through the approved method.");
+      lines.push("This ticket cannot be closed without it.");
+    } else {
+      d=2; lines.push("Verified - but this ticket touches no account. A turn spent.");
+    }
+  }
+  else if(M.kind==="isolate"){
+    d=M.pow+b.info*5;
+    lines.push(b.info?me.name+" ruled causes out one at a time.":me.name+" changed something at random.");
+    if(!b.info) lines.push("No detail gathered. Barely moved it.");
+  }
+  else if(M.kind==="fix"){
+    if(b.info<2){ d=4; lines.push("Applied a fix on a guess. It made things worse."); me.hp=Math.max(1,me.hp-4); }
+    else if(t.account&&!b.verified){ d=3; lines.push("Changed an account without verifying identity."); lines.push("The fix does not count."); }
+    else { d=M.pow+b.info*3; lines.push(me.name+" applied the fix."); }
+  }
+  else if(M.kind==="escalate"){
+    if(t.oos){ d=999; b.escalated=true;
+      lines.push("Out of scope, and you proved it before handing over.");
+      lines.push("Escalated with the port, the tests run and the result."); }
+    else { d=3; b.atk+=1; lines.push("Escalated something you could have solved.");
+           lines.push("Tier 2 sent it back. The clock kept running."); }
+  }
+  else if(M.kind==="document"){
+    b.documented=true; d=M.pow+b.info*2;
+    lines.push(me.name+" wrote it up: observed, tried, result, next.");
+  }
+
+  d=Math.round(d*(1+(me.lvl-1)*0.15));
+  if(weak&&(M.kind==="isolate"||M.kind==="fix"||M.kind==="escalate")){ d=Math.round(d*2);
+    lines.push("The right skill for this ticket."); }
+  b.hp=Math.max(0,b.hp-d);
+  b.flash=8;
+  sfx(M.kind==="ask"?"collect":(weak?"crit":"hit"));
+
+  bmsg(lines.join("\n"),()=>{
+    if(b.hp<=0){ resolveTicket(); return; }
+    if(b.turns>=b.sla+3){ breach(); return; }
+    userTurn();
+  });
+}
+function userTurn(){
+  const b=S.battle, me=b.me;
+  const left=b.sla-b.turns;
+  if(left===1){ bmsg("SLA warning: one turn left on the clock.",()=>b.phase="menu"); return; }
+  const d=Math.max(1,Math.round(b.atk*(0.8+Math.random()*0.5)));
+  me.hp=Math.max(0,me.hp-d);
+  b.shake=10; sfx("hurt");
+  const flavour = left<=0 ? "The ticket has breached. The user is calling again."
+                          : "The user follows up. The clock is running.";
+  bmsg(flavour+"\n"+me.name+" took "+d+".",()=>{
+    if(me.hp<=0){
+      const rest=alive();
+      if(rest.length){ sfx("faint"); b.me=rest[0]; bmsg(me.name+" is spent. "+rest[0].name+" takes over.",()=>b.phase="menu"); }
+      else loseTicket();
+    } else b.phase="menu";
+  });
+}
+function breach(){
+  const b=S.battle;
+  sfx("deny");
+  bmsg("SLA BREACHED. The ticket reassigns to Tier 2.",()=>loseTicket(true));
+}
+function resolveTicket(){
+  const b=S.battle, t=b.f;
+  const slaMet=b.turns<=b.sla;
+  const fcr=(b.turns<=Math.ceil(b.sla*0.7))&&!b.escalated;
+  b.me.xp+=10;
+  let lvlup=false;
+  if(b.me.xp>=20*b.me.lvl){ b.me.lvl++; b.me.max+=6; b.me.hp=b.me.max; b.me.atk+=2; lvlup=true;
+    setTimeout(()=>sfx("levelup"),700); }
+  closeTicket(b.tid,{turns:b.turns,sla:slaMet,fcr,verified:b.verified,
+    escalated:b.escalated,documented:b.documented});
+  musicThen("win","world"); sfx("logged");
+  const q=[
+    (slaMet?"Closed within SLA in "+b.turns+" turns.":"Closed, but the SLA was missed."),
+    (b.documented?"Written up for the next shift.":"Closed with thin notes. The next person will pay for that."),
+    "TICKETDEX updated: "+t.name+"."
+  ];
+  if(lvlup) q.push(b.me.name+" reached level "+b.me.lvl+".");
+  b.phase="msg"; b.queue=q.slice(1);
+  bmsg(q[0],()=>nextWinMsg());
+}
+function nextWinMsg(){
+  const b=S.battle;
+  if(b.queue&&b.queue.length){ bmsg(b.queue.shift(),()=>nextWinMsg()); return; }
+  const tid=b.tid;
+  S.battle=null; S.scene="world"; save();
+  beat(tid,()=>afterBeat(tid));
+}
+function afterBeat(tid){
+  const t=TICKETS[tid];
+  if(t.boss){
+    const act=ACTS[t.act-1];
+    if(!S.badges.includes(act.badge)){
+      S.badges.push(act.badge);
+      say([["","BADGE GET: "+act.badge+"!"],
+           ["","Floor "+act.floor+" cleared. The lift will take you up."]]);
+    }
+  }
+}
+function loseTicket(breached){
+  const b=S.battle;
+  sfx("faint"); music("world");
+  const msg=breached?"Reassigned. It is out of your hands now."
+                    :"You are out of road on this one. It goes back to the queue.";
+  bmsg(msg,()=>{
+    S.party.forEach(p=>p.hp=Math.max(1,Math.round(p.max*0.5)));
+    S.battle=null; S.scene="world"; S.shift++;
+    say([["","The ticket is still open."],
+         ["","Tip: ASK twice before you FIX. Detail is what makes the fix land."]]);
+  });
+}
+
+function bar(x,y,w,cur,max,pal){
+  const r=Math.max(0,cur/max), fill=Math.max(0,Math.round(r*(w-2)));
+  usePal("ui"); frame(x,y,w,6,2); rect(x+1,y+1,w-2,4,0);
+  usePal(pal||(r<0.3?"uibad":r<0.55?"uiwarn":"uigood"));
+  rect(x+1,y+1,fill,4,2);
+  rect(x+1,y+1,fill,1,3);
+  if(r<0.3&&(S.tick>>3)%2===0) rect(x+1,y+1,fill,4,3);
+}
+function drawBattle(){
+  const b=S.battle;
+  clear(1,"sky");
+  usePal("sky");
+  for(let y=0;y<72;y++){ const t=y/72; rect(0,y,W,1, t<0.33?3:(t<0.66?2:1)); }
+  usePal("floor");
+  for(let y=72;y<92;y++) rect(0,y,W,1, y<76?2:1);
+  usePal("plant"); for(let i=0;i<30;i++) rect(111+i,44,1,2,2);
+  usePal("desk");  for(let i=0;i<38;i++) rect(10+i,88,1,2,2);
+
+  const fl=(b.flash>0&&(S.tick>>1)%2===0);
+  const sh=(b.shake>0)?((S.tick%2)?2:-2):0;
+  if(!fl) drawMon(b.f.spr,112,12,2,b.f.pal);
+  drawMon(b.me.id,14+sh,56,2,b.me.type);
+
+  drawBox(2,6,92,30,"ui"); usePal("ui");
+  text(b.f.name,7,10,3);
+  text(b.f.cat,7,19,2);
+  if(b.f.account){ usePal(b.verified?"uigood":"uibad"); text(b.verified?"ID OK":"ID?",74,19,3); }
+  bar(7,27,80,b.hp,b.max,"uibad");
+
+  drawBox(66,58,92,34,"ui"); usePal("ui");
+  text(b.me.name,71,62,3);
+  text("L"+b.me.lvl,140,62,2);
+  bar(71,72,76,b.me.hp,b.me.max,"uigood");
+  usePal("ui"); text(b.me.hp+"/"+b.me.max,71,82,2);
+  usePal("DETECT"); text("i"+b.info,112,82,3);
+  const left=b.sla-b.turns;
+  usePal(left<=1?"uibad":left<=3?"uiwarn":"uigood");
+  text("SLA"+Math.max(0,left),130,82,3);
+
+  if(b.phase==="menu"){
+    drawBox(0,92,160,52,"ui"); usePal("ui");
+    for(let i=0;i<4;i++){
+      const mv=b.me.moves[i]; if(!mv)continue;
+      const x=(i%2)?86:10, y=(i<2)?99:111;
+      if(i===b.menu){ usePal("uiwarn"); text(">",x-6,y,3); usePal("ui"); }
+      text(MOVES[mv].name,x,y,3);
+    }
+    usePal("ui"); rect(6,118,148,1,1);
+    const mv=b.me.moves[b.menu];
+    if(mv) wrap(MOVES[mv].blurb,25).slice(0,2).forEach((ln,i)=>text(ln,6,122+i*9,2));
+  } else {
+    drawBox(0,92,160,52,"ui"); usePal("ui");
+    const lines=wrap(b.text,23).slice(0,3);
+    let shown=b.ch,y=100;
+    for(const ln of lines){ text(ln.substring(0,Math.max(0,shown)),8,y,3); shown-=ln.length; y+=12; if(shown<=0)break; }
+    if(b.tdone&&(S.tick>>4)%2===0){ usePal("uiwarn"); rect(149,133,4,3,3); rect(150,136,2,1,3); }
+  }
+  if(b.shake>0)b.shake--;
+  if(b.flash>0)b.flash--;
+}
+function updBattle(){
+  const b=S.battle;
+  if(b.phase==="msg"){
+    const total=wrap(b.text,23).slice(0,3).join("").length;
+    if(!b.tdone){ const p=b.ch; b.ch+=keys.ok?3:1; if(b.ch>p) sfx("text"); if(b.ch>=total){b.ch=total;b.tdone=true;} }
+    else if(hit("ok")||hit("back")){ sfx("page"); const t=b.then; b.then=null; if(t)t(); else b.phase="menu"; }
+    return;
+  }
+  if(b.phase==="intro"){ b.phase="menu"; return; }
+  const m0=b.menu;
+  if(hit("up"))b.menu=(b.menu+3)%4;
+  if(hit("down"))b.menu=(b.menu+1)%4;
+  if(hit("left"))b.menu=(b.menu+3)%4;
+  if(hit("right"))b.menu=(b.menu+1)%4;
+  if(b.menu>=b.me.moves.length)b.menu=0;
+  if(b.menu!==m0) sfx("cursor");
+  if(hit("ok")){ sfx("confirm"); doMove(b.me.moves[b.menu]); }
+}
+
+/* ══ MENUS ══════════════════════════════════════════════════════════ */
+const MENU=["TICKETDEX","SKILLS","BADGES","METRICS","JOURNAL","MAP","RESUME","SAVE","CLOSE"];
+function updMenu(){
+  if(hit("back")||hit("menu")){ sfx("cancel"); S.scene="world"; return; }
+  const m0=S.menuIdx;
+  if(hit("up"))S.menuIdx=(S.menuIdx+MENU.length-1)%MENU.length;
+  if(hit("down"))S.menuIdx=(S.menuIdx+1)%MENU.length;
+  if(S.menuIdx!==m0) sfx("cursor");
+  if(hit("ok")){ sfx("confirm");
+    const m=MENU[S.menuIdx];
+    if(m==="CLOSE") S.scene="world";
+    else if(m==="SAVE"){ save(); say([["","Shift saved."]]); }
+    else if(m==="RESUME") openSheet();
+    else if(m==="MAP"){ S.mapFrom="menu"; S.scene="map"; }
+    else if(m==="TICKETDEX"){ S.scene="dex"; S.subIdx=0; S.scroll=0; }
+    else if(m==="SKILLS"){ S.scene="skills"; S.subIdx=0; }
+    else if(m==="BADGES"){ S.scene="badges"; }
+    else if(m==="METRICS"){ S.scene="metrics"; }
+    else if(m==="JOURNAL"){ S.scene="journal"; S.subIdx=0; }
+  }
+}
+function drawMenu(){
+  drawWorld();
+  const w=78,x=W-w-4;
+  drawBox(x,4,w,MENU.length*11+10,"ui");
+  MENU.forEach((m,i)=>{
+    const y=10+i*11;
+    if(i===S.menuIdx){ usePal("uiwarn"); rect(x+3,y-2,w-6,11,0); text(">",x+4,y,3); }
+    usePal("ui"); text(m,x+12,y,i===S.menuIdx?3:2);
+  });
+}
+
+function drawList(title,rows,idx,scroll,perPage){
+  clear(0,"ui"); usePal("ui");
+  rect(0,0,W,12,1); usePal("uiwarn"); text(title,4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  if(!rows.length){ text("Nothing here yet.",8,30,2); return; }
+  const start=scroll, end=Math.min(rows.length,start+perPage);
+  for(let i=start;i<end;i++){
+    const y=18+(i-start)*13;
+    if(i===idx){ usePal("uiwarn"); rect(2,y-2,156,12,1); text(">",4,y,3); }
+    usePal("ui"); text(rows[i],11,y,i===idx?3:2);
+  }
+  usePal("ui"); rect(0,128,W,16,1); text((idx+1)+" of "+rows.length+"   Z: detail",4,133,3);
+}
+
+const FLOORS=ACTS.slice().reverse().map(a=>({tag:a.floor,name:a.where,act:a.n,sub:a.name,map:a.map}));
+function updMap(){ if(hit("back")||hit("map")||hit("ok")){ sfx("cancel"); S.scene=S.mapFrom||"world"; } }
+function drawMap(){
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text("THE BUILDING",4,3,3);
+  usePal("ui"); text("M:back",120,3,2);
+
+  // lift shaft running the height of the building
+  usePal("metal"); rect(20,16,7,112,1); rect(22,16,3,112,0);
+  FLOORS.forEach((f,i)=>{
+    const y=17+i*22, here=(f.map===S.map);
+    const open=(f.act<=S.act);
+    usePal(open?(here?"uiwarn":"ui"):"void");
+    rect(2,y,16,18,here?1:0);
+    frame(2,y,16,18,2);
+    text(f.tag,4,y+5,3);
+    // shaft stop marker
+    usePal(open?"ACCESS":"void"); rect(21,y+7,5,3,open?3:1);
+    usePal(open?"ui":"void");
+    rect(30,y,126,18,here?1:0);
+    if(here){ usePal("uiwarn"); rect(30,y,126,18,1); }
+    usePal(open?"ui":"void");
+    text(f.name,34,y+2,open?3:1);
+    usePal(open?(here?"uiwarn":"DETECT"):"void");
+    text(f.sub,34,y+11,open?3:1);
+    if(!open){ usePal("void"); rect(146,y+5,8,8,1); rect(148,y+3,4,4,1); }
+    if(here&&(S.tick>>4)%2===0){ usePal("uiwarn"); text(">",27,y+5,3); }
+  });
+  usePal("ui"); rect(0,130,W,14,1);
+  text("Badges "+S.badges.length+"/5   Floors "+Math.min(S.act,5)+"/5",4,134,3);
+}
+function dexList(){ return Object.keys(TICKETS).filter(k=>S.dex.includes(k)); }
+function updDex(){
+  const n=dexList().length;
+  if(hit("back")){ sfx("cancel"); S.scene="menu"; return; }
+  if(!n) return;
+  const m0=S.subIdx;
+  if(hit("up")&&S.subIdx>0)S.subIdx--;
+  if(hit("down")&&S.subIdx<n-1)S.subIdx++;
+  if(S.subIdx!==m0) sfx("cursor");
+  if(S.subIdx<S.scroll)S.scroll=S.subIdx;
+  if(S.subIdx>=S.scroll+7)S.scroll=S.subIdx-6;
+  if(hit("ok")){ sfx("confirm"); S.scene="dexentry"; S.scroll2=0; }
+}
+function drawDex(){
+  const ks=dexList();
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text("TICKETDEX",4,3,3);
+  usePal("ui"); text(S.dex.length+"/"+Object.keys(TICKETS).length,112,3,2);
+  if(!ks.length){ text("No tickets closed yet.",8,30,2); return; }
+  for(let i=S.scroll;i<Math.min(ks.length,S.scroll+7);i++){
+    const t=TICKETS[ks[i]], y=17+(i-S.scroll)*15;
+    if(i===S.subIdx){ usePal("uiwarn"); rect(2,y-3,156,15,1); text(">",4,y,3); }
+    usePal("ui"); text(String(i+1).padStart(2,"0"),11,y,i===S.subIdx?3:2);
+    text(t.name,28,y,i===S.subIdx?3:2);
+    usePal(t.weak); text(TSHORT[t.weak],132,y,3);
+  }
+  usePal("ui"); rect(0,128,W,16,1); text("Z: lesson    X: back",4,133,3);
+}
+function updDexEntry(){
+  const ks=dexList(), t=TICKETS[ks[S.subIdx]];
+  const lines=wrap(t.lesson,24);
+  const maxScroll=Math.max(0,lines.length-5);
+  if(hit("back")||hit("ok")){ sfx("cancel"); S.scene="dex"; return; }
+  if(hit("down")&&S.scroll2<maxScroll)S.scroll2++;
+  if(hit("up")&&S.scroll2>0)S.scroll2--;
+}
+function drawDexEntry(){
+  const ks=dexList(), t=TICKETS[ks[S.subIdx]];
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text(t.name,4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  usePal(t.weak); rect(0,12,W,11,1); text(t.cat+"  "+TSHORT[t.weak],4,15,3);
+  usePal("ui");
+  const lines=wrap(t.lesson,24);
+  for(let i=S.scroll2;i<Math.min(lines.length,S.scroll2+5);i++)
+    text(lines[i],5,26+(i-S.scroll2)*11,3);
+  if(lines.length>5){
+    usePal("DETECT");
+    const frac=S.scroll2/Math.max(1,lines.length-5);
+    rect(156,26,2,55,1); rect(156,26+Math.round(frac*45),2,10,3);
+  }
+  usePal("uiwarn"); rect(0,84,W,38,1);
+  wrap("TIP: "+t.tip,25).slice(0,3).forEach((ln,i)=>text(ln,5,88+i*10,3));
+  usePal("ui"); rect(0,122,W,22,1);
+  text(lines.length>5?"UP/DOWN scroll":"X: back",4,126,3);
+  text("Floor "+ACTS[t.act-1].floor+"  "+ACTS[t.act-1].name,4,135,2);
+}
+
+/* ── SKILLS ── */
+function updSkills(){
+  if(hit("back")){ sfx("cancel"); S.scene="menu"; return; }
+  if(!S.party.length) return;
+  const m0=S.subIdx;
+  if(hit("up")&&S.subIdx>0)S.subIdx--;
+  if(hit("down")&&S.subIdx<S.party.length-1)S.subIdx++;
+  if(S.subIdx!==m0) sfx("cursor");
+}
+function drawSkills(){
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text("SKILLS",4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  if(!S.party.length){ text("None yet. Talk to MARCUS.",8,30,2); return; }
+  S.party.forEach((p,i)=>{
+    const y=15+i*15;
+    if(i===S.subIdx){ usePal("uiwarn"); rect(0,y-3,W,15,1); text(">",2,y,3); }
+    usePal("ui"); text(p.name,9,y,i===S.subIdx?3:2);
+    usePal(p.type); text(TSHORT[p.type],72,y,3);
+    bar(94,y,44,p.hp,p.max);
+    usePal("ui"); text("L"+p.lvl,142,y,3);
+  });
+  const p=S.party[S.subIdx];
+  usePal(p.type); rect(0,118,W,26,1);
+  wrap(SKILLS[p.id].short,25).slice(0,2).forEach((ln,i)=>text(ln,4,123+i*10,3));
+}
+
+/* ── BADGES ── */
+function updBadges(){ if(hit("back")||hit("ok")){ sfx("cancel"); S.scene="menu"; } }
+function drawBadges(){
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text("BADGE CASE",4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  ACTS.forEach((a,i)=>{
+    const y=16+i*17, got=S.badges.includes(a.badge);
+    usePal(got?"ACCESS":"void");
+    rect(4,y,13,13,got?2:1); frame(4,y,13,13,3);
+    if(got){ usePal("ui"); text("*",8,y+3,0); }
+    usePal(got?"ui":"void");
+    text(a.badge,22,y+1,got?3:1);
+    usePal(got?"DETECT":"void");
+    text("Floor "+a.floor+"  "+a.name,22,y+9,got?3:1);
+  });
+  usePal("uiwarn"); rect(0,102,W,42,1);
+  text("CERTIFICATIONS",4,106,3);
+  usePal("ui"); text("CompTIA Network+",4,116,3);
+  usePal("DETECT"); text("in progress, exam 2026",4,125,3);
+  usePal("ui"); text("A.A.S. IT (in progress)",4,135,2);
+}
+
+/* ── METRICS ── */
+function updMetrics(){ if(hit("back")||hit("ok")){ sfx("cancel"); S.scene="menu"; } }
+function drawMetrics(){
+  const m=metrics();
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text("SHIFT METRICS",4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  const rows=[["Tickets closed",String(m.closed),"ui"],
+              ["SLA met",m.slaMet+"%",m.slaMet>=80?"uigood":m.slaMet>=60?"uiwarn":"uibad"],
+              ["First contact",m.fcr+"%",m.fcr>=50?"uigood":"uiwarn"],
+              ["Documented",m.docd+"%",m.docd>=70?"uigood":"uiwarn"]];
+  rows.forEach((r,i)=>{
+    const y=20+i*17;
+    usePal("ui"); text(r[0],5,y,2);
+    usePal(r[2]); text(r[1],108,y,3);
+    const pct=parseInt(r[1])||0;
+    if(r[1].indexOf("%")>0){ bar(5,y+9,100,pct,100,r[2]); }
+  });
+  usePal("ui"); rect(0,92,W,52,1);
+  text("Shift "+S.shift+"   Floor "+ACTS[Math.min(S.act,5)-1].floor,4,97,3);
+  usePal("DETECT");
+  wrap("SLA is met by closing inside the turn limit. First contact means no escalation and fast.",24)
+    .slice(0,4).forEach((ln,i)=>text(ln,4,108+i*9,3));
+}
+
+function updJournal(){
+  const n=S.journal.length;
+  if(hit("back")){ S.scene="menu"; return; }
+  if(hit("up")&&S.subIdx>0)S.subIdx--;
+  if(hit("down")&&S.subIdx<n-1)S.subIdx++;
+}
+function drawJournal(){
+  const ent=JOURNAL.filter(j=>S.journal.includes(j.key));
+  clear(0,"ui"); usePal("ui"); rect(0,0,W,12,1);
+  usePal("uiwarn"); text("JOURNAL",4,3,3);
+  usePal("ui"); text("X:back",118,3,2);
+  if(!ent.length){ text("Nothing recorded yet.",8,30,2); return; }
+  if(S.subIdx>=ent.length)S.subIdx=ent.length-1;
+  const e=ent[S.subIdx];
+  usePal("uiwarn"); rect(4,16,152,13,1); text(e.t,8,19,3);
+  usePal("ui");
+  wrap(e.b,24).slice(0,8).forEach((ln,i)=>text(ln,8,36+i*11,3));
+  usePal("ui"); rect(0,128,W,16,1);
+  text((S.subIdx+1)+" of "+ent.length+"   UP/DOWN",4,133,3);
+}
+/* ══ TITLE ══════════════════════════════════════════════════════════ */
+function drawTitle(){
+  clear(0,"title"); usePal("title");
+  for(let y=0;y<H;y++) rect(0,y,W,1, y<46?1:0);
+  usePal("sky");
+  for(let i=0;i<28;i++){ const x=(i*41+((S.tick>>3)*(1+i%3)))%W, y=(i*13)%44; px(x,y,i%4?2:3); }
+  drawMon("VERIFY",10,8,2,"SECURITY");
+  drawMon("PRINTER",118,8,2,"boss");
+  usePal("uiwarn"); ctext("HELP DESK QUEST",50,3);
+  usePal("title"); rect(24,62,112,1,2);
+  usePal("ui"); ctext("TIER ONE EDITION",66,2);
+  usePal("ACCESS"); ctext("JAYLEN SHERRILL",82,3);
+  usePal("ui"); ctext("IT SUPPORT - NASHVILLE TN",92,2);
+  if((S.tick>>4)%2===0){ usePal("uiwarn"); ctext("PRESS Z TO START",110,3); }
+  usePal("ui"); ctext("5 floors. 25 tickets.",124,2);
+  usePal("DETECT"); ctext("R = resume + contact",134,3);
+}
+function updTitle(){
+  if(hit("ok")){
+    if(S.flags.seenPrologue){ S.scene="world"; music("world"); return; }
+    S.flags.seenPrologue=true;
+    story(PROLOGUE.map(c=>({pal:c.pal,lines:c.lines})),()=>{
+      music("world");
+      say([["","Talk to MARCUS for your first SKILL. The patterned carpet is where tickets find you."],
+           ["","ENTER opens the TICKETDEX. Every ticket you close is explained there."]]);
+    });
+  }
+}
+
+/* ── Hall of fame ── */
+function updHof(){ if(hit("ok")){ sfx("confirm"); openSheet(); } if(hit("back")) S.scene="world"; }
+function drawHof(){
+  const m=metrics();
+  clear(0,"uigood"); usePal("uigood");
+  for(let i=0;i<34;i++){ const x=(i*47+(S.tick>>2))%W, y=(i*17)%H; px(x,y,i%3?2:3); }
+  rect(0,26,W,92,1);
+  usePal("ACCESS"); ctext("SHIFT COMPLETE",34,3);
+  usePal("uigood"); rect(34,46,92,1,3);
+  usePal("ui");
+  ctext("JAYLEN SHERRILL",54,3);
+  ctext("IT SUPPORT - NASHVILLE TN",64,2);
+  usePal("DETECT");
+  ctext("Tickets closed  "+m.closed,80,3);
+  ctext("SLA met  "+m.slaMet+"%",90,3);
+  ctext("Badges  "+S.badges.length+"/5",100,3);
+  if((S.tick>>4)%2===0){ usePal("uiwarn"); ctext("PRESS Z FOR RESUME",126,3); }
+}
+
+/* ══ LOOP ═══════════════════════════════════════════════════════════ */
+function update(){
+  S.tick++;
+  switch(S.scene){
+    case "title": updTitle(); break;
+    case "world": updWorld(); break;
+    case "dialog": updMsg(); break;
+    case "story": updStory(); break;
+    case "menu": updMenu(); break;
+    case "battle": updBattle(); break;
+    case "map": updMap(); break;
+    case "dex": updDex(); break;
+    case "dexentry": updDexEntry(); break;
+    case "skills": updSkills(); break;
+    case "badges": updBadges(); break;
+    case "metrics": updMetrics(); break;
+    case "hof": updHof(); break;
+    case "journal": updJournal(); break;
+  }
+  clearPressed();
+}
+function draw(){
+  switch(S.scene){
+    case "title": drawTitle(); break;
+    case "world": drawWorld(); break;
+    case "dialog": drawWorld(); drawMsg(); break;
+    case "story": drawStory(); break;
+    case "menu": drawMenu(); break;
+    case "battle": drawBattle(); break;
+    case "map": drawMap(); break;
+    case "dex": drawDex(); break;
+    case "dexentry": drawDexEntry(); break;
+    case "skills": drawSkills(); break;
+    case "badges": drawBadges(); break;
+    case "metrics": drawMetrics(); break;
+    case "hof": drawHof(); break;
+    case "journal": drawJournal(); break;
+  }
+  flush();
+}
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+
+/* ── Resume overlay: real HTML so the links are actually clickable ── */
+const sheetEl=document.getElementById("sheet");
+const sheetBody=document.getElementById("sheetBody");
+let sheetBuilt=false, sheetPrev=null;
+function esc(t){ return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function buildSheet(){
+  if(sheetBuilt) return;
+  const h=[];
+  h.push('<h2>PROJECT</h2><div class="row"><div class="rt">'+esc(ME.project.n)+'</div>');
+  h.push('<p class="lead">'+esc(ME.project.d)+'</p><ul>');
+  ME.project.b.forEach(x=>h.push('<li>'+esc(x)+'</li>'));
+  h.push('</ul></div>');
+  h.push('<h2>EXPERIENCE</h2>');
+  ME.jobs.forEach(j=>{
+    h.push('<div class="row"><div class="rt">'+esc(j.n)+' &middot; '+esc(j.o)+'</div>');
+    h.push('<div class="rm">'+esc(j.w)+' &middot; '+esc(j.l)+'</div><ul>');
+    j.b.forEach(x=>h.push('<li>'+esc(x)+'</li>'));
+    h.push('</ul></div>');
+  });
+  h.push('<h2>EDUCATION</h2><div class="row"><div class="rt">'+esc(ME.edu.award)+'</div>');
+  h.push('<div class="rm">'+esc(ME.edu.school)+' &middot; '+esc(ME.edu.when)+'</div></div>');
+  h.push('<h2>CERTIFICATIONS</h2>');
+  ME.certs.forEach(c=>h.push('<div class="row"><div class="rt">'+esc(c.n)+'</div><div class="rm">'+esc(c.s)+'</div></div>'));
+  h.push('<h2>THIS PAGE</h2><div class="row"><p class="lead">Help Desk Quest is a playable portfolio. '+
+    'Five floors, twenty-five real tickets, and a TICKETDEX that explains the reasoning behind each one. '+
+    'Built as a single HTML file with no dependencies: hand-drawn sprites, a palette-bank renderer and a runtime chiptune engine.</p></div>');
+  sheetBody.innerHTML=h.join("");
+  sheetBuilt=true;
+}
+function openSheet(){
+  buildSheet(); sheetPrev=S.scene; sheetEl.hidden=false;
+  document.getElementById("sheetClose").focus();
+}
+function closeSheet(){
+  sheetEl.hidden=true;
+  if(sheetPrev&&sheetPrev!=="hof") S.scene=(sheetPrev==="menu")?"menu":sheetPrev;
+}
+document.getElementById("sheetClose").onclick=closeSheet;
+document.getElementById("btnResume").onclick=()=>{ audioInit(); openSheet(); };
+sheetEl.addEventListener("click",e=>{ if(e.target===sheetEl) closeSheet(); });
+
+/* ── viewport: fill the window, letterboxed ── */
+function fit(){
+  const coarse = matchMedia("(pointer:coarse)").matches;
+  const availW = window.innerWidth - (coarse?16:48);
+  const availH = window.innerHeight - (coarse?16:76);
+  const raw = Math.min(availW/W, availH/H);
+  const sc = raw>=2 ? Math.floor(raw) : Math.max(1,raw);
+  cvs.style.width = Math.round(W*sc)+"px";
+  cvs.style.height = Math.round(H*sc)+"px";
+}
+addEventListener("resize",fit);
+addEventListener("orientationchange",()=>setTimeout(fit,120));
+fit();
+
+/* ── display toggles ── */
+const crtEl=document.getElementById("crt");
+function toggleCrt(){ crtEl.classList.toggle("off"); }
+function toggleFs(){
+  const el=document.documentElement;
+  if(!document.fullscreenElement){ (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); }
+  else { (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }
+  setTimeout(fit,180);
+}
+document.getElementById("btnCrt").onclick=toggleCrt;
+document.getElementById("btnFs").onclick=toggleFs;
+document.addEventListener("fullscreenchange",()=>setTimeout(fit,180));
+
+/* ── audio: unlock inside the gesture, then report honest state ── */
+const btnSnd=document.getElementById("btnSnd");
+function refreshSnd(){ btnSnd.textContent="SOUND: "+audioState(); }
+btnSnd.onclick=()=>{ audioInit(); if(audioState()!=="BLOCKED") audioToggle(); refreshSnd(); };
+function unlockAudio(){ audioInit(); setTimeout(refreshSnd,60); }
+addEventListener("keydown",unlockAudio,{capture:true});
+addEventListener("pointerdown",unlockAudio,{capture:true});
+addEventListener("touchstart",unlockAudio,{capture:true,passive:true});
+
+addEventListener("keydown",e=>{
+  if(!sheetEl.hidden){
+    if(e.key==="Escape"||e.key.toLowerCase()==="r"){ e.preventDefault(); closeSheet(); }
+    return;
+  }
+  const k=e.key.toLowerCase();
+  if(k==="f"){ e.preventDefault(); toggleFs(); }
+  if(k==="c"){ e.preventDefault(); toggleCrt(); }
+  if(k==="r"){ e.preventDefault(); openSheet(); }
+});
+
+/* ── touch controls ── */
+(function(){
+  document.querySelectorAll("#touch i").forEach(el=>{
+    const k=el.dataset.k;
+    const down=e=>{ e.preventDefault(); unlockAudio(); if(!keys[k])PRESSED[k]=true; keys[k]=true; };
+    const up=e=>{ e.preventDefault(); keys[k]=false; };
+    el.addEventListener("touchstart",down,{passive:false});
+    el.addEventListener("touchend",up,{passive:false});
+    el.addEventListener("touchcancel",up,{passive:false});
+    el.addEventListener("mousedown",down); el.addEventListener("mouseup",up); el.addEventListener("mouseleave",up);
+  });
+})();
+
+(async()=>{ await load(); if(S.party.length&&S.flags.seenPrologue) S.scene="world"; refreshSnd(); loop(); })();
+</script>
+</body>
+</html>
